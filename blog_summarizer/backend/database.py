@@ -1,0 +1,85 @@
+"""
+SQLite database operations for Blog Summarizer.
+"""
+
+import sqlite3
+import json
+import os
+from typing import List, Dict, Any
+
+DB_PATH = os.path.join(os.path.dirname(__file__), "summaries.db")
+
+
+def get_connection() -> sqlite3.Connection:
+    """Get a database connection with row factory."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def init_db() -> None:
+    """Create the summaries table if it doesn't exist."""
+    conn = get_connection()
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                domain TEXT NOT NULL,
+                difficulty TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                key_points TEXT NOT NULL,
+                takeaway TEXT NOT NULL,
+                original_url TEXT NOT NULL UNIQUE,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def save_summary(data: Dict[str, Any]) -> int:
+    """
+    Save a summary to the database.
+    Returns the row ID of the inserted record.
+    """
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            """
+            INSERT INTO summaries (title, domain, difficulty, summary, key_points, takeaway, original_url)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                data["title"],
+                data["domain"],
+                data["difficulty"],
+                data["summary"],
+                json.dumps(data["key_points"]),
+                data["takeaway"],
+                data["original_url"],
+            ),
+        )
+        conn.commit()
+        return cursor.lastrowid
+    finally:
+        conn.close()
+
+
+def get_all_summaries() -> List[Dict[str, Any]]:
+    """Retrieve all summaries, newest first."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM summaries ORDER BY created_at DESC"
+        ).fetchall()
+
+        results = []
+        for row in rows:
+            item = dict(row)
+            item["key_points"] = json.loads(item["key_points"])
+            results.append(item)
+        return results
+    finally:
+        conn.close()

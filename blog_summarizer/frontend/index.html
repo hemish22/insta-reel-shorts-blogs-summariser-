@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Blog Summarizer — Paste a blog URL and get an AI-powered structured summary instantly.">
+    <title>Blog Summarizer — AI-Powered Article Summaries</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header__logo">
+                <span class="header__icon">📝</span>
+                <h1 class="header__title">Blog Summarizer</h1>
+            </div>
+            <p class="header__subtitle">Paste a blog URL. Get a structured AI summary in seconds.</p>
+            <a href="/dashboard" class="nav-link">📊 View Dashboard</a>
+        </header>
+
+        <!-- Input Section -->
+        <section class="input-section" id="input-section">
+            <div class="input-group">
+                <input
+                    type="url"
+                    id="url-input"
+                    class="input-field"
+                    placeholder="https://example.com/blog-post..."
+                    autocomplete="url"
+                    autofocus
+                >
+                <button id="submit-btn" class="btn btn--primary" onclick="submitUrl()">
+                    <span id="btn-text">Summarize</span>
+                    <div id="btn-spinner" class="spinner"></div>
+                </button>
+            </div>
+            <div id="status" class="status"></div>
+        </section>
+
+        <!-- Result Section -->
+        <section id="result-section" style="display: none;"></section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
