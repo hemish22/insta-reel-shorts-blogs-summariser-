@@ -1,0 +1,108 @@
+"""
+Audio download service.
+Downloads audio from YouTube/Instagram videos using yt-dlp.
+"""
+
+import os
+import tempfile
+import uuid
+import subprocess
+import shutil
+
+
+# Temporary directory for downloaded audio files
+TEMP_DIR = os.path.join(tempfile.gettempdir(), "blog_summarizer_audio")
+os.makedirs(TEMP_DIR, exist_ok=True)
+
+
+def download_audio(url: str) -> str:
+    """
+    Download audio from a video URL using yt-dlp.
+
+    Args:
+        url: YouTube or Instagram video URL.
+
+    Returns:
+        Path to the downloaded .wav file.
+
+    Raises:
+        RuntimeError: If download fails.
+    """
+    if not shutil.which("ffmpeg"):
+        raise RuntimeError(
+            "ffmpeg not found. Install it with: brew install ffmpeg"
+        )
+
+    output_path = os.path.join(TEMP_DIR, f"{uuid.uuid4().hex}.wav")
+
+    try:
+        result = subprocess.run(
+            [
+                "yt-dlp",
+                "--no-playlist",
+                "--extract-audio",
+                "--audio-format", "wav",
+                "--audio-quality", "0",
+                "--output", output_path.replace(".wav", ".%(ext)s"),
+                "--quiet",
+                "--no-warnings",
+                "--socket-timeout", "30",
+                url,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,  # 2 min max for download
+        )
+
+        if result.returncode != 0:
+            error_msg = result.stderr.strip()
+            if "Private video" in error_msg or "Sign in" in error_msg:
+                raise RuntimeError("This video is private or requires login.")
+            if "not a valid URL" in error_msg:
+                raise RuntimeError(f"Invalid video URL: {url}")
+            raise RuntimeError(f"yt-dlp failed: {error_msg[:300]}")
+
+        # yt-dlp may create the file with a slightly different name
+        if not os.path.exists(output_path):
+            # Look for any wav file in temp dir with our uuid
+            base = output_path.replace(".wav", "")
+            for f in os.listdir(TEMP_DIR):
+                if f.startswith(os.path.basename(base)):
+                    output_path = os.path.join(TEMP_DIR, f)
+                    break
+
+        if not os.path.exists(output_path):
+            raise RuntimeError("Audio file was not created. Download may have failed.")
+
+        # Verify file is not empty
+        if os.path.getsize(output_path) < 1000:
+            cleanup_audio(output_path)
+            raise RuntimeError("Downloaded audio file is too small or corrupted.")
+
+        return output_path
+
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Audio download timed out (>2 minutes).")
+    except RuntimeError:
+        raise
+    except Exception as e:
+        raise RuntimeError(f"Failed to download audio: {str(e)}")
+
+
+def cleanup_audio(file_path: str) -> None:
+    """Remove a temporary audio file."""
+    try:
+        if file_path and os.path.exists(file_path):
+            os.remove(file_path)
+    except OSError:
+        pass
+
+
+def cleanup_all() -> None:
+    """Remove all temporary audio files."""
+    try:
+        if os.path.exists(TEMP_DIR):
+            shutil.rmtree(TEMP_DIR)
+            os.makedirs(TEMP_DIR, exist_ok=True)
+    except OSError:
+        pass

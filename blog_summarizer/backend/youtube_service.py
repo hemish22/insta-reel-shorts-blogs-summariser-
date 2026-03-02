@@ -1,6 +1,7 @@
 """
 YouTube transcript extraction service.
 Detects YouTube URLs and fetches video transcripts.
+Falls back to Whisper ASR when transcript API is unavailable.
 """
 
 import re
@@ -11,6 +12,10 @@ from youtube_transcript_api._errors import (
     NoTranscriptFound,
     VideoUnavailable,
 )
+
+from audio_service import download_audio, cleanup_audio
+from whisper_service import transcribe_audio
+from transcript_cleaner import clean_transcript
 
 
 # ──────────────────────────────────────────────
@@ -47,72 +52,108 @@ def extract_video_id(url: str) -> Optional[str]:
 
 
 # ──────────────────────────────────────────────
-# Transcript Fetching
+# Transcript Fetching (API + Whisper Fallback)
 # ──────────────────────────────────────────────
+
+def _fetch_via_api(video_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Try to fetch transcript via YouTube Transcript API.
+    Returns None if transcripts are disabled/unavailable (triggers fallback).
+    Raises RuntimeError for fatal errors (e.g., video doesn't exist).
+    """
+    try:
+        api = YouTubeTranscriptApi()
+        transcript = api.fetch(video_id)
+
+        full_text = " ".join(snippet.text for snippet in transcript)
+        full_text = re.sub(r'\s+', ' ', full_text).strip()
+
+        if not full_text or len(full_text) < 50:
+            return None  # Too short, try Whisper
+
+        return {
+            "text": full_text,
+            "language": transcript.language,
+            "method": "api",
+        }
+
+    except (TranscriptsDisabled, NoTranscriptFound):
+        # These are expected — fallback to Whisper
+        return None
+    except VideoUnavailable:
+        raise RuntimeError(
+            "This video is unavailable, private, or does not exist."
+        )
+    except Exception:
+        # Unknown API error — try Whisper as fallback
+        return None
+
+
+def _fetch_via_whisper(url: str) -> Dict[str, Any]:
+    """
+    Download audio and transcribe with Whisper.
+    Used as fallback when transcript API is unavailable.
+    """
+    audio_path = None
+    try:
+        print("📥 No transcript available. Downloading audio for Whisper...")
+        audio_path = download_audio(url)
+
+        result = transcribe_audio(audio_path)
+        cleaned = clean_transcript(result["text"])
+
+        if not cleaned or len(cleaned) < 20:
+            raise RuntimeError(
+                "Could not extract meaningful speech from this video. "
+                "It may be music-only or have very little spoken content."
+            )
+
+        return {
+            "text": cleaned,
+            "language": result["language"],
+            "method": "whisper",
+        }
+    finally:
+        if audio_path:
+            cleanup_audio(audio_path)
+
 
 def fetch_transcript(url: str) -> Dict[str, Any]:
     """
     Fetch the transcript for a YouTube video.
+    Strategy: Try API first → fallback to Whisper if unavailable.
 
     Args:
         url: YouTube video URL.
 
     Returns:
-        dict with keys: video_id, text, domain, language
+        dict with keys: video_id, text, domain, language, method
 
     Raises:
         ValueError: If URL is not a valid YouTube URL.
-        RuntimeError: If transcript cannot be fetched.
+        RuntimeError: If both API and Whisper fail.
     """
     video_id = extract_video_id(url)
     if not video_id:
         raise ValueError(f"Could not extract video ID from URL: {url}")
 
-    try:
-        api = YouTubeTranscriptApi()
-        transcript = api.fetch(video_id)
+    # Step 1: Try transcript API (fast)
+    result = _fetch_via_api(video_id)
 
-        # Combine all transcript segments into full text
-        full_text = " ".join(
-            snippet.text for snippet in transcript
-        )
+    # Step 2: If API fails, fallback to Whisper (slower but universal)
+    if result is None:
+        result = _fetch_via_whisper(url)
 
-        # Clean up the text
-        full_text = re.sub(r'\s+', ' ', full_text).strip()
+    # Truncate very long transcripts
+    MAX_CHARS = 30000
+    text = result["text"]
+    if len(text) > MAX_CHARS:
+        text = text[:MAX_CHARS] + "... [transcript truncated]"
 
-        if not full_text or len(full_text) < 50:
-            raise RuntimeError(
-                "Transcript is too short or empty. "
-                "The video may not have meaningful spoken content."
-            )
-
-        # Truncate very long transcripts (Gemini handles ~30k tokens well)
-        MAX_CHARS = 30000
-        if len(full_text) > MAX_CHARS:
-            full_text = full_text[:MAX_CHARS] + "... [transcript truncated]"
-
-        return {
-            "video_id": video_id,
-            "text": full_text,
-            "domain": "youtube.com",
-            "language": transcript.language,
-        }
-
-    except TranscriptsDisabled:
-        raise RuntimeError(
-            "Transcripts are disabled for this video. "
-            "The uploader has turned off captions."
-        )
-    except NoTranscriptFound:
-        raise RuntimeError(
-            "No transcript found for this video. "
-            "Try a video with auto-generated or manual captions."
-        )
-    except VideoUnavailable:
-        raise RuntimeError(
-            "This video is unavailable, private, or does not exist."
-        )
-    except RuntimeError:
-        raise
-    except Exception as e:
-        raise RuntimeError(f"Failed to fetch YouTube transcript: {str(e)}")
+    return {
+        "video_id": video_id,
+        "text": text,
+        "domain": "youtube.com",
+        "language": result["language"],
+        "method": result["method"],  # "api" or "whisper"
+    }

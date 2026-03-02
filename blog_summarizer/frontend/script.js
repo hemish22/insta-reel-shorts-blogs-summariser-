@@ -39,9 +39,11 @@ async function submitUrl() {
     btnText.textContent = 'Summarizing...';
     spinner.classList.add('spinner--active');
     const isYT = /youtube\.com|youtu\.be/.test(url);
-    showStatus(status, isYT
-        ? '⏳ Fetching transcript and generating summary... This may take a few seconds.'
-        : '⏳ Scraping article and generating summary... This may take a few seconds.', 'loading');
+    const isIG = /instagram\.com/.test(url);
+    let statusMsg = '⏳ Scraping article and generating summary... This may take a few seconds.';
+    if (isYT) statusMsg = '⏳ Fetching transcript and generating summary... This may take a few seconds.';
+    if (isIG) statusMsg = '⏳ Downloading reel and transcribing... This may take 30-60 seconds.';
+    showStatus(status, statusMsg, 'loading');
     resultSection.style.display = 'none';
 
     try {
@@ -275,10 +277,16 @@ function createHistoryCard(data, index) {
         .map(point => `<li>${escapeHtml(point)}</li>`)
         .join('');
 
-    const isYouTube = data.source_type === 'youtube';
-    const sourceIcon = isYouTube ? '🎬' : '📝';
-    const sourceLabel = isYouTube ? 'YouTube' : 'Blog';
-    const linkText = isYouTube ? '▶️ Watch original video →' : '🔗 Read original article →';
+    const sourceType = data.source_type || 'blog';
+    const sourceConfig = {
+        youtube: { icon: '🎬', label: 'YouTube', link: '▶️ Watch original video →' },
+        instagram: { icon: '📸', label: 'Instagram', link: '📸 View original reel →' },
+        blog: { icon: '📝', label: 'Blog', link: '🔗 Read original article →' },
+    };
+    const src = sourceConfig[sourceType] || sourceConfig.blog;
+    const sourceIcon = src.icon;
+    const sourceLabel = src.label;
+    const linkText = src.link;
 
     // Tools mentioned section (YouTube only)
     const tools = data.tools_mentioned || [];
