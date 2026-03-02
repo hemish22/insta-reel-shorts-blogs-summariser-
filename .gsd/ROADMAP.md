@@ -1,7 +1,7 @@
 # ROADMAP.md
 
-> **Current Milestone**: v1.1 — Enhanced Dashboard + YouTube ✅
-> **Previous Milestone**: v1.0 ✅ Complete
+> **Current Milestone**: v1.2 — Whisper ASR + Instagram Reels
+> **Previous Milestone**: v1.1 ✅ Complete
 
 ---
 
@@ -10,40 +10,44 @@ All 4 phases complete. Core flow working: URL → scrape → summarize → store
 
 ---
 
-## Milestone v1.1 — Enhanced Dashboard + YouTube Support
-
-> **Goal**: Polished dashboard with search/filter/delete, plus YouTube video summarization via transcript extraction.
-
-### Must-Haves
-- [x] Clean, scannable card layout with date, platform/domain, and original link prominent
-- [x] Search/filter bar to find past summaries quickly
-- [x] Expand/collapse for summary details (compact list by default)
-- [x] Smooth animations and responsive mobile design
-- [x] Delete individual summaries
-- [x] YouTube video summarization via transcript
-
-### Phases
-
-#### Phase 1: Enhanced Dashboard UI ✅
-**Status**: ✅ Complete
-**Objective**: Redesign the dashboard with compact card layout, search bar, expand/collapse, and delete
+## Milestone v1.1 — Enhanced Dashboard + YouTube ✅
+Phase 1: Enhanced Dashboard ✅ | Phase 2: YouTube Transcript Summarization ✅
 
 ---
 
-#### Phase 2: YouTube Video Summarization ✅
-**Status**: ✅ Complete
-**Objective**: Allow users to paste a YouTube URL, extract the transcript, and summarize it via Gemini
-**Depends on**: Phase 1
+## Milestone v1.2 — Whisper ASR + Instagram Reels
+
+> **Goal**: Unified text extraction layer — when transcripts are unavailable, download video, extract audio, run Whisper ASR to generate transcript, then summarize via Gemini. Support YouTube (no transcript), Instagram Reels, and any video with speech.
+
+### Must-Haves
+- [ ] Download video audio via `yt-dlp` (YouTube + Instagram)
+- [ ] Local Whisper ASR (whisper-base model for MVP)
+- [ ] Fallback pipeline: try transcript API → if fails → Whisper
+- [ ] Instagram Reel URL detection + summarization
+- [ ] Transcript cleaning (filler words, repeated phrases)
+- [ ] Frontend: Instagram/Reel source indicator
+
+### Phases
+
+#### Phase 3: Whisper ASR Fallback + Instagram Reels
+**Status**: ⬜ Not Started
+**Objective**: When a video has no transcript, download audio via yt-dlp, transcribe with Whisper, clean the text, and summarize. Support Instagram Reels as a new source.
+**Depends on**: Phase 2
 
 **Tasks**:
-- [ ] Install `youtube-transcript-api` for transcript extraction
-- [ ] Create `youtube_service.py` — detect YouTube URLs, extract transcript
-- [ ] Update `main.py` `/summarize` endpoint to handle YouTube URLs alongside blog URLs
-- [ ] Create YouTube-specific Gemini prompt (key insights, tools mentioned, summary, optional timestamps)
-- [ ] Update frontend to show YouTube summaries with video metadata (channel, duration)
-- [ ] Update database schema if needed (source_type field: blog vs youtube)
+- [ ] Install `openai-whisper`, `yt-dlp`, `ffmpeg` dependencies
+- [ ] Create `audio_service.py` — download video audio via yt-dlp, extract to wav/mp3
+- [ ] Create `whisper_service.py` — transcribe audio using Whisper base model
+- [ ] Create `transcript_cleaner.py` — remove filler words (um, uh), repeated phrases
+- [ ] Create `instagram_service.py` — detect Instagram Reel URLs, download via yt-dlp
+- [ ] Update `youtube_service.py` — fallback: transcript API → if fails → Whisper pipeline
+- [ ] Update `main.py` — unified routing: blog / YouTube / Instagram
+- [ ] Update frontend — Instagram source indicator (📸), Reel metadata
+- [ ] Update database — `source_type: "instagram"` support
 
 **Verification**:
-- Paste a YouTube tech video URL → get structured summary
-- Summary appears on dashboard with YouTube source indicator
-- Blog URL flow still works without regression
+- YouTube video WITH transcript → uses API (fast, existing flow)
+- YouTube video WITHOUT transcript → downloads, Whisper transcribes, summary generated
+- Instagram Reel → downloads, Whisper transcribes, summary generated
+- All entries appear on dashboard with correct source indicators
+- Blog flow still works without regression
