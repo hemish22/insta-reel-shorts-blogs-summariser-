@@ -48,23 +48,40 @@ ARTICLE TEXT:
 {article_text}
 """
 
+YOUTUBE_SUMMARIZATION_PROMPT = """You are an expert video content summarizer. Analyze the following YouTube video transcript and return a structured JSON summary.
 
-def summarize_text(text: str) -> dict:
+IMPORTANT: Return ONLY valid JSON, no markdown, no code fences, no extra text.
+
+The JSON must have exactly these fields:
+{{
+    "title": "A clear, concise title for the video",
+    "summary": "A comprehensive 2-3 sentence summary of the video's main message",
+    "key_points": ["Insight 1", "Insight 2", "Insight 3", "Insight 4", "Insight 5"],
+    "difficulty": "Beginner OR Intermediate OR Advanced",
+    "takeaway": "The single most important actionable takeaway from this video",
+    "tools_mentioned": ["Tool or resource 1", "Tool or resource 2"]
+}}
+
+Rules:
+- "title": Create a clear, descriptive title for the video content.
+- "summary": Capture the core message in 2-3 clear sentences.
+- "key_points": Extract exactly 5 key insights. Each should be a concise, standalone point.
+- "difficulty": Rate based on the technical depth and assumed viewer knowledge.
+- "takeaway": One actionable sentence the viewer should remember.
+- "tools_mentioned": List any tools, libraries, frameworks, services, or resources mentioned. Use an empty list [] if none.
+
+VIDEO TRANSCRIPT:
+{transcript_text}
+"""
+
+
+def _call_gemini(prompt: str) -> dict:
     """
-    Send article text to Gemini API and get a structured summary.
-
-    Args:
-        text: The cleaned article text.
-
-    Returns:
-        dict with keys: title, summary, key_points, difficulty, takeaway
-
-    Raises:
-        RuntimeError: If Gemini API call fails or returns invalid JSON.
+    Send a prompt to Gemini and parse the JSON response.
+    Shared by both blog and YouTube summarization.
     """
     try:
         model = genai.GenerativeModel(MODEL_NAME)
-        prompt = SUMMARIZATION_PROMPT.format(article_text=text)
 
         response = model.generate_content(
             prompt,
@@ -80,7 +97,6 @@ def summarize_text(text: str) -> dict:
         # Clean potential markdown code fences
         if response_text.startswith("```"):
             lines = response_text.split("\n")
-            # Remove first and last lines (code fences)
             lines = [l for l in lines if not l.strip().startswith("```")]
             response_text = "\n".join(lines).strip()
 
@@ -92,26 +108,11 @@ def summarize_text(text: str) -> dict:
                 f"Gemini returned invalid JSON. Raw response:\n{response_text[:500]}"
             )
 
-        # Validate required fields
-        required_fields = ["title", "summary", "key_points", "difficulty", "takeaway"]
-        for field in required_fields:
-            if field not in result:
-                raise RuntimeError(f"Gemini response missing required field: {field}")
-
-        # Ensure key_points is a list
-        if not isinstance(result["key_points"], list):
-            result["key_points"] = [result["key_points"]]
-
-        # Validate difficulty
-        valid_difficulties = ["Beginner", "Intermediate", "Advanced"]
-        if result["difficulty"] not in valid_difficulties:
-            result["difficulty"] = "Intermediate"  # Default fallback
-
         return result
 
     except genai.types.BlockedPromptException:
         raise RuntimeError(
-            "The article content was blocked by Gemini's safety filters."
+            "The content was blocked by Gemini's safety filters."
         )
     except Exception as e:
         if "API key" in str(e).lower():
@@ -121,3 +122,66 @@ def summarize_text(text: str) -> dict:
         if isinstance(e, RuntimeError):
             raise
         raise RuntimeError(f"Gemini API error: {str(e)}")
+
+
+def summarize_text(text: str) -> dict:
+    """
+    Send article text to Gemini API and get a structured summary.
+
+    Returns:
+        dict with keys: title, summary, key_points, difficulty, takeaway
+    """
+    prompt = SUMMARIZATION_PROMPT.format(article_text=text)
+    result = _call_gemini(prompt)
+
+    # Validate required fields
+    required_fields = ["title", "summary", "key_points", "difficulty", "takeaway"]
+    for field in required_fields:
+        if field not in result:
+            raise RuntimeError(f"Gemini response missing required field: {field}")
+
+    # Ensure key_points is a list
+    if not isinstance(result["key_points"], list):
+        result["key_points"] = [result["key_points"]]
+
+    # Validate difficulty
+    valid_difficulties = ["Beginner", "Intermediate", "Advanced"]
+    if result["difficulty"] not in valid_difficulties:
+        result["difficulty"] = "Intermediate"
+
+    return result
+
+
+def summarize_youtube(transcript_text: str) -> dict:
+    """
+    Send YouTube transcript to Gemini API and get a structured summary.
+
+    Returns:
+        dict with keys: title, summary, key_points, difficulty, takeaway, tools_mentioned
+    """
+    prompt = YOUTUBE_SUMMARIZATION_PROMPT.format(transcript_text=transcript_text)
+    result = _call_gemini(prompt)
+
+    # Validate required fields
+    required_fields = ["title", "summary", "key_points", "difficulty", "takeaway"]
+    for field in required_fields:
+        if field not in result:
+            raise RuntimeError(f"Gemini response missing required field: {field}")
+
+    # Ensure key_points is a list
+    if not isinstance(result["key_points"], list):
+        result["key_points"] = [result["key_points"]]
+
+    # Ensure tools_mentioned is a list (optional field)
+    if "tools_mentioned" not in result:
+        result["tools_mentioned"] = []
+    if not isinstance(result["tools_mentioned"], list):
+        result["tools_mentioned"] = [result["tools_mentioned"]]
+
+    # Validate difficulty
+    valid_difficulties = ["Beginner", "Intermediate", "Advanced"]
+    if result["difficulty"] not in valid_difficulties:
+        result["difficulty"] = "Intermediate"
+
+    return result
+

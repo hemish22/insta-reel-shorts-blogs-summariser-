@@ -31,9 +31,20 @@ def init_db() -> None:
                 key_points TEXT NOT NULL,
                 takeaway TEXT NOT NULL,
                 original_url TEXT NOT NULL UNIQUE,
+                source_type TEXT NOT NULL DEFAULT 'blog',
+                tools_mentioned TEXT DEFAULT '[]',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        # Migration: add source_type column if missing (for existing DBs)
+        cursor = conn.execute("PRAGMA table_info(summaries)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "source_type" not in columns:
+            conn.execute("ALTER TABLE summaries ADD COLUMN source_type TEXT NOT NULL DEFAULT 'blog'")
+        if "tools_mentioned" not in columns:
+            conn.execute("ALTER TABLE summaries ADD COLUMN tools_mentioned TEXT DEFAULT '[]'")
+
         conn.commit()
     finally:
         conn.close()
@@ -48,8 +59,8 @@ def save_summary(data: Dict[str, Any]) -> int:
     try:
         cursor = conn.execute(
             """
-            INSERT INTO summaries (title, domain, difficulty, summary, key_points, takeaway, original_url)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries (title, domain, difficulty, summary, key_points, takeaway, original_url, source_type, tools_mentioned)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["title"],
@@ -59,6 +70,8 @@ def save_summary(data: Dict[str, Any]) -> int:
                 json.dumps(data["key_points"]),
                 data["takeaway"],
                 data["original_url"],
+                data.get("source_type", "blog"),
+                json.dumps(data.get("tools_mentioned", [])),
             ),
         )
         conn.commit()
@@ -79,6 +92,10 @@ def get_all_summaries() -> List[Dict[str, Any]]:
         for row in rows:
             item = dict(row)
             item["key_points"] = json.loads(item["key_points"])
+            item["tools_mentioned"] = json.loads(item.get("tools_mentioned", "[]") or "[]")
+            # Ensure source_type has a value
+            if not item.get("source_type"):
+                item["source_type"] = "blog"
             results.append(item)
         return results
     finally:
@@ -96,4 +113,3 @@ def delete_summary(summary_id: int) -> bool:
         return cursor.rowcount > 0
     finally:
         conn.close()
-

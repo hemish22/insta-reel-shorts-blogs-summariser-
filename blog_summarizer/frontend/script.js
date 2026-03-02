@@ -38,7 +38,10 @@ async function submitUrl() {
     btn.disabled = true;
     btnText.textContent = 'Summarizing...';
     spinner.classList.add('spinner--active');
-    showStatus(status, '⏳ Scraping article and generating summary... This may take a few seconds.', 'loading');
+    const isYT = /youtube\.com|youtu\.be/.test(url);
+    showStatus(status, isYT
+        ? '⏳ Fetching transcript and generating summary... This may take a few seconds.'
+        : '⏳ Scraping article and generating summary... This may take a few seconds.', 'loading');
     resultSection.style.display = 'none';
 
     try {
@@ -272,11 +275,26 @@ function createHistoryCard(data, index) {
         .map(point => `<li>${escapeHtml(point)}</li>`)
         .join('');
 
+    const isYouTube = data.source_type === 'youtube';
+    const sourceIcon = isYouTube ? '🎬' : '📝';
+    const sourceLabel = isYouTube ? 'YouTube' : 'Blog';
+    const linkText = isYouTube ? '▶️ Watch original video →' : '🔗 Read original article →';
+
+    // Tools mentioned section (YouTube only)
+    const tools = data.tools_mentioned || [];
+    const toolsHtml = tools.length > 0 ? `
+        <div class="detail-section detail-section--full">
+            <div class="detail-label">Tools & Resources Mentioned</div>
+            <div class="detail-text">${tools.map(t => `<span class="badge badge--domain" style="margin: 2px 4px 2px 0;">${escapeHtml(t)}</span>`).join('')}</div>
+        </div>
+    ` : '';
+
     card.innerHTML = `
         <div class="history-card__preview" onclick="toggleCard(${data.id})">
             <div class="history-card__info">
                 <div class="history-card__title">${escapeHtml(data.title)}</div>
                 <div class="history-card__meta-row">
+                    <span class="history-card__meta-item"><span>${sourceIcon}</span> ${sourceLabel}</span>
                     <span class="history-card__meta-item"><span>🌐</span> ${escapeHtml(data.domain)}</span>
                     <span class="history-card__meta-item"><span>📅</span> ${date}</span>
                     <span class="badge ${difficultyClass}" style="font-size: 0.7rem; padding: 2px 8px;">${escapeHtml(data.difficulty)}</span>
@@ -302,10 +320,11 @@ function createHistoryCard(data, index) {
                         <div class="detail-label">Takeaway</div>
                         <div class="takeaway-box">${escapeHtml(data.takeaway)}</div>
                     </div>
+                    ${toolsHtml}
                 </div>
                 <div class="detail-footer">
                     <a href="${escapeHtml(data.original_url)}" target="_blank" rel="noopener noreferrer" class="original-link">
-                        🔗 Read original article →
+                        ${linkText}
                     </a>
                     <span class="history-card__meta-item" style="font-size: 0.75rem;"><span>📅</span> ${date}</span>
                 </div>

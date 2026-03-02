@@ -12,7 +12,8 @@ from fastapi.responses import FileResponse
 from models import SummarizeRequest, SummaryResponse
 from database import init_db, save_summary, get_all_summaries, delete_summary
 from scraper import scrape_article
-from gemini_service import summarize_text
+from gemini_service import summarize_text, summarize_youtube
+from youtube_service import is_youtube_url, fetch_transcript
 
 
 @asynccontextmanager
@@ -25,8 +26,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Blog Summarizer",
-    description="Paste a blog URL, get a structured AI summary.",
-    version="1.0.0",
+    description="Paste a blog or YouTube URL, get a structured AI summary.",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -67,56 +68,92 @@ async def serve_dashboard():
 @app.post("/summarize", response_model=SummaryResponse)
 async def summarize_url(request: SummarizeRequest):
     """
-    Accept a blog URL, scrape it, summarize with Gemini, store in DB, return summary.
+    Accept a blog or YouTube URL, extract content, summarize with Gemini, store in DB.
     """
     url = request.url.strip()
 
     if not url:
         raise HTTPException(status_code=400, detail="URL is required.")
 
-    # Step 1: Scrape article
-    try:
-        article = scrape_article(url)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
-    except TimeoutError as e:
-        raise HTTPException(status_code=504, detail=str(e))
-    except ConnectionError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to scrape article: {str(e)}",
-        )
+    # ── Route: YouTube ──
+    if is_youtube_url(url):
+        try:
+            transcript_data = fetch_transcript(url)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to fetch transcript: {str(e)}",
+            )
 
-    # Step 2: Summarize with Gemini
-    try:
-        summary_data = summarize_text(article["text"])
-    except RuntimeError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Summarization failed: {str(e)}",
-        )
+        try:
+            summary_data = summarize_youtube(transcript_data["text"])
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Summarization failed: {str(e)}",
+            )
 
-    # Step 3: Build response
-    result = {
-        "title": summary_data["title"],
-        "domain": article["domain"],
-        "difficulty": summary_data["difficulty"],
-        "summary": summary_data["summary"],
-        "key_points": summary_data["key_points"],
-        "takeaway": summary_data["takeaway"],
-        "original_url": url,
-    }
+        result = {
+            "title": summary_data["title"],
+            "domain": transcript_data["domain"],
+            "difficulty": summary_data["difficulty"],
+            "summary": summary_data["summary"],
+            "key_points": summary_data["key_points"],
+            "takeaway": summary_data["takeaway"],
+            "original_url": url,
+            "source_type": "youtube",
+            "tools_mentioned": summary_data.get("tools_mentioned", []),
+        }
 
-    # Step 4: Store in database
+    # ── Route: Blog ──
+    else:
+        try:
+            article = scrape_article(url)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        except TimeoutError as e:
+            raise HTTPException(status_code=504, detail=str(e))
+        except ConnectionError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to scrape article: {str(e)}",
+            )
+
+        try:
+            summary_data = summarize_text(article["text"])
+        except RuntimeError as e:
+            raise HTTPException(status_code=502, detail=str(e))
+        except Exception as e:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Summarization failed: {str(e)}",
+            )
+
+        result = {
+            "title": summary_data["title"],
+            "domain": article["domain"],
+            "difficulty": summary_data["difficulty"],
+            "summary": summary_data["summary"],
+            "key_points": summary_data["key_points"],
+            "takeaway": summary_data["takeaway"],
+            "original_url": url,
+            "source_type": "blog",
+            "tools_mentioned": [],
+        }
+
+    # ── Store in DB ──
     try:
         row_id = save_summary(result)
         result["id"] = row_id
     except Exception as e:
-        # If it's a duplicate URL, still return the summary but note it
         if "UNIQUE" in str(e):
             result["id"] = None
         else:

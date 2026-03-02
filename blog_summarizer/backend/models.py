@@ -30,4 +30,7 @@ class SummaryResponse(BaseModel):
     key_points: List[str]
     takeaway: str
     original_url: str
+    source_type: str = "blog"
+    tools_mentioned: List[str] = []
     created_at: Optional[str] = None
+
