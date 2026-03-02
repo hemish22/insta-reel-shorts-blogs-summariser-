@@ -1,20 +1,26 @@
 """
 FastAPI application for Blog Summarizer.
+Supports Blog, YouTube, and Instagram URL summarization with real-time progress.
 """
 
 import os
+import json
+import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from models import SummarizeRequest, SummaryResponse
 from database import init_db, save_summary, get_all_summaries, delete_summary
 from scraper import scrape_article
 from gemini_service import summarize_text, summarize_youtube
-from youtube_service import is_youtube_url, fetch_transcript
-from instagram_service import is_instagram_url, fetch_instagram_transcript
+from youtube_service import is_youtube_url, fetch_transcript, extract_video_id, _fetch_via_api, _fetch_via_whisper
+from instagram_service import is_instagram_url, fetch_instagram_transcript, extract_post_id
+from audio_service import download_audio, cleanup_audio
+from whisper_service import transcribe_audio
+from transcript_cleaner import clean_transcript
 
 
 @asynccontextmanager
@@ -27,8 +33,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="Blog Summarizer",
-    description="Paste a blog, YouTube, or Instagram URL — get a structured AI summary.",
-    version="1.2.0",
+    description="Paste a blog, YouTube, or Instagram URL — get a structured AI summary with real-time progress.",
+    version="1.3.0",
     lifespan=lifespan,
 )
 
@@ -52,153 +58,239 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 @app.get("/")
 async def serve_homepage():
-    """Serve the homepage."""
     return FileResponse(os.path.join(FRONTEND_DIR, "index.html"))
 
 
 @app.get("/dashboard")
 async def serve_dashboard():
-    """Serve the dashboard page."""
     return FileResponse(os.path.join(FRONTEND_DIR, "dashboard.html"))
 
 
 # ──────────────────────────────────────────────
-# API Endpoints
+# SSE Helpers
+# ──────────────────────────────────────────────
+
+def sse_event(data: dict) -> str:
+    """Format a Server-Sent Event."""
+    return f"data: {json.dumps(data)}\n\n"
+
+
+# ──────────────────────────────────────────────
+# Streaming Summarize Endpoint (Real-time Progress)
+# ──────────────────────────────────────────────
+
+@app.post("/summarize-stream")
+async def summarize_stream(request: SummarizeRequest):
+    """
+    Stream real-time progress events during summarization.
+    Returns Server-Sent Events (SSE) with progress updates.
+    """
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required.")
+
+    async def event_generator():
+        try:
+            # ── Route: Instagram ──
+            if is_instagram_url(url):
+                yield sse_event({"step": "detect", "status": "done", "message": "📸 Instagram Reel detected"})
+
+                yield sse_event({"step": "download", "status": "active", "message": "📥 Downloading reel audio..."})
+                audio_path = await asyncio.to_thread(download_audio, url)
+                yield sse_event({"step": "download", "status": "done", "message": "✅ Audio downloaded"})
+
+                yield sse_event({"step": "transcribe", "status": "active", "message": "🎙️ Transcribing with Whisper AI..."})
+                whisper_result = await asyncio.to_thread(transcribe_audio, audio_path)
+                cleanup_audio(audio_path)
+                yield sse_event({"step": "transcribe", "status": "done", "message": f"✅ Transcribed ({whisper_result['language']})"})
+
+                yield sse_event({"step": "clean", "status": "active", "message": "🧹 Cleaning transcript..."})
+                cleaned_text = clean_transcript(whisper_result["text"])
+                yield sse_event({"step": "clean", "status": "done", "message": "✅ Transcript cleaned"})
+
+                if not cleaned_text or len(cleaned_text) < 20:
+                    yield sse_event({"step": "error", "status": "error", "message": "❌ No meaningful speech found in this reel."})
+                    return
+
+                # Truncate
+                if len(cleaned_text) > 30000:
+                    cleaned_text = cleaned_text[:30000] + "... [truncated]"
+
+                yield sse_event({"step": "summarize", "status": "active", "message": "🤖 Generating AI summary..."})
+                summary_data = await asyncio.to_thread(summarize_youtube, cleaned_text)
+                yield sse_event({"step": "summarize", "status": "done", "message": "✅ Summary generated"})
+
+                result = {
+                    "title": summary_data["title"],
+                    "domain": "instagram.com",
+                    "difficulty": summary_data["difficulty"],
+                    "summary": summary_data["summary"],
+                    "key_points": summary_data["key_points"],
+                    "takeaway": summary_data["takeaway"],
+                    "original_url": url,
+                    "source_type": "instagram",
+                    "tools_mentioned": summary_data.get("tools_mentioned", []),
+                }
+
+            # ── Route: YouTube ──
+            elif is_youtube_url(url):
+                video_id = extract_video_id(url)
+                yield sse_event({"step": "detect", "status": "done", "message": "🎬 YouTube video detected"})
+
+                yield sse_event({"step": "transcript", "status": "active", "message": "📝 Fetching transcript..."})
+                api_result = await asyncio.to_thread(_fetch_via_api, video_id)
+
+                if api_result is not None:
+                    # Fast path: API transcript available
+                    text = api_result["text"]
+                    language = api_result["language"]
+                    yield sse_event({"step": "transcript", "status": "done", "message": "✅ Transcript fetched via API"})
+                else:
+                    # Slow path: Whisper fallback
+                    yield sse_event({"step": "transcript", "status": "done", "message": "⚠️ No transcript available — using Whisper"})
+
+                    yield sse_event({"step": "download", "status": "active", "message": "📥 Downloading video audio..."})
+                    audio_path = await asyncio.to_thread(download_audio, url)
+                    yield sse_event({"step": "download", "status": "done", "message": "✅ Audio downloaded"})
+
+                    yield sse_event({"step": "transcribe", "status": "active", "message": "🎙️ Transcribing with Whisper AI..."})
+                    whisper_result = await asyncio.to_thread(transcribe_audio, audio_path)
+                    cleanup_audio(audio_path)
+                    yield sse_event({"step": "transcribe", "status": "done", "message": f"✅ Transcribed ({whisper_result['language']})"})
+
+                    yield sse_event({"step": "clean", "status": "active", "message": "🧹 Cleaning transcript..."})
+                    text = clean_transcript(whisper_result["text"])
+                    language = whisper_result["language"]
+                    yield sse_event({"step": "clean", "status": "done", "message": "✅ Transcript cleaned"})
+
+                # Truncate
+                if len(text) > 30000:
+                    text = text[:30000] + "... [truncated]"
+
+                yield sse_event({"step": "summarize", "status": "active", "message": "🤖 Generating AI summary..."})
+                summary_data = await asyncio.to_thread(summarize_youtube, text)
+                yield sse_event({"step": "summarize", "status": "done", "message": "✅ Summary generated"})
+
+                result = {
+                    "title": summary_data["title"],
+                    "domain": "youtube.com",
+                    "difficulty": summary_data["difficulty"],
+                    "summary": summary_data["summary"],
+                    "key_points": summary_data["key_points"],
+                    "takeaway": summary_data["takeaway"],
+                    "original_url": url,
+                    "source_type": "youtube",
+                    "tools_mentioned": summary_data.get("tools_mentioned", []),
+                }
+
+            # ── Route: Blog ──
+            else:
+                yield sse_event({"step": "detect", "status": "done", "message": "📝 Blog article detected"})
+
+                yield sse_event({"step": "scrape", "status": "active", "message": "🌐 Scraping article content..."})
+                article = await asyncio.to_thread(scrape_article, url)
+                yield sse_event({"step": "scrape", "status": "done", "message": f"✅ Scraped from {article['domain']}"})
+
+                yield sse_event({"step": "summarize", "status": "active", "message": "🤖 Generating AI summary..."})
+                summary_data = await asyncio.to_thread(summarize_text, article["text"])
+                yield sse_event({"step": "summarize", "status": "done", "message": "✅ Summary generated"})
+
+                result = {
+                    "title": summary_data["title"],
+                    "domain": article["domain"],
+                    "difficulty": summary_data["difficulty"],
+                    "summary": summary_data["summary"],
+                    "key_points": summary_data["key_points"],
+                    "takeaway": summary_data["takeaway"],
+                    "original_url": url,
+                    "source_type": "blog",
+                    "tools_mentioned": [],
+                }
+
+            # ── Save to DB ──
+            yield sse_event({"step": "save", "status": "active", "message": "💾 Saving to database..."})
+            try:
+                row_id = save_summary(result)
+                result["id"] = row_id
+            except Exception as e:
+                if "UNIQUE" in str(e):
+                    result["id"] = None
+                else:
+                    yield sse_event({"step": "error", "status": "error", "message": f"⚠️ Save failed: {str(e)}"})
+            yield sse_event({"step": "save", "status": "done", "message": "✅ Saved to database"})
+
+            # ── Final result ──
+            yield sse_event({"step": "complete", "status": "done", "message": "🎉 All done!", "result": result})
+
+        except Exception as e:
+            yield sse_event({"step": "error", "status": "error", "message": f"❌ {str(e)}"})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+# ──────────────────────────────────────────────
+# Legacy Non-Streaming Endpoints
 # ──────────────────────────────────────────────
 
 @app.post("/summarize", response_model=SummaryResponse)
 async def summarize_url(request: SummarizeRequest):
-    """
-    Accept a blog, YouTube, or Instagram URL.
-    Extract content → summarize with Gemini → store in DB.
-    """
+    """Non-streaming summarize endpoint (kept for backward compatibility)."""
     url = request.url.strip()
-
     if not url:
         raise HTTPException(status_code=400, detail="URL is required.")
 
-    # ── Route: Instagram ──
     if is_instagram_url(url):
         try:
-            transcript_data = fetch_instagram_transcript(url)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except RuntimeError as e:
+            transcript_data = await asyncio.to_thread(fetch_instagram_transcript, url)
+        except (ValueError, RuntimeError) as e:
             raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to process Instagram reel: {str(e)}",
-            )
-
-        try:
-            summary_data = summarize_youtube(transcript_data["text"])
-        except RuntimeError as e:
-            raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Summarization failed: {str(e)}",
-            )
-
+        summary_data = await asyncio.to_thread(summarize_youtube, transcript_data["text"])
         result = {
-            "title": summary_data["title"],
-            "domain": transcript_data["domain"],
-            "difficulty": summary_data["difficulty"],
-            "summary": summary_data["summary"],
-            "key_points": summary_data["key_points"],
-            "takeaway": summary_data["takeaway"],
-            "original_url": url,
-            "source_type": "instagram",
+            "title": summary_data["title"], "domain": transcript_data["domain"],
+            "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+            "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+            "original_url": url, "source_type": "instagram",
             "tools_mentioned": summary_data.get("tools_mentioned", []),
         }
-
-    # ── Route: YouTube ──
     elif is_youtube_url(url):
         try:
-            transcript_data = fetch_transcript(url)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except RuntimeError as e:
+            transcript_data = await asyncio.to_thread(fetch_transcript, url)
+        except (ValueError, RuntimeError) as e:
             raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to fetch transcript: {str(e)}",
-            )
-
-        try:
-            summary_data = summarize_youtube(transcript_data["text"])
-        except RuntimeError as e:
-            raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Summarization failed: {str(e)}",
-            )
-
+        summary_data = await asyncio.to_thread(summarize_youtube, transcript_data["text"])
         result = {
-            "title": summary_data["title"],
-            "domain": transcript_data["domain"],
-            "difficulty": summary_data["difficulty"],
-            "summary": summary_data["summary"],
-            "key_points": summary_data["key_points"],
-            "takeaway": summary_data["takeaway"],
-            "original_url": url,
-            "source_type": "youtube",
+            "title": summary_data["title"], "domain": transcript_data["domain"],
+            "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+            "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+            "original_url": url, "source_type": "youtube",
             "tools_mentioned": summary_data.get("tools_mentioned", []),
         }
-
-    # ── Route: Blog ──
     else:
         try:
-            article = scrape_article(url)
-        except ValueError as e:
-            raise HTTPException(status_code=422, detail=str(e))
-        except TimeoutError as e:
-            raise HTTPException(status_code=504, detail=str(e))
-        except ConnectionError as e:
+            article = await asyncio.to_thread(scrape_article, url)
+        except (ValueError, TimeoutError, ConnectionError) as e:
             raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to scrape article: {str(e)}",
-            )
-
-        try:
-            summary_data = summarize_text(article["text"])
-        except RuntimeError as e:
-            raise HTTPException(status_code=502, detail=str(e))
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Summarization failed: {str(e)}",
-            )
-
+        summary_data = await asyncio.to_thread(summarize_text, article["text"])
         result = {
-            "title": summary_data["title"],
-            "domain": article["domain"],
-            "difficulty": summary_data["difficulty"],
-            "summary": summary_data["summary"],
-            "key_points": summary_data["key_points"],
-            "takeaway": summary_data["takeaway"],
-            "original_url": url,
-            "source_type": "blog",
-            "tools_mentioned": [],
+            "title": summary_data["title"], "domain": article["domain"],
+            "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+            "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+            "original_url": url, "source_type": "blog", "tools_mentioned": [],
         }
 
-    # ── Store in DB ──
     try:
         row_id = save_summary(result)
         result["id"] = row_id
     except Exception as e:
-        if "UNIQUE" in str(e):
-            result["id"] = None
-        else:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Failed to save summary: {str(e)}",
-            )
+        result["id"] = None if "UNIQUE" in str(e) else None
 
     return result
 
@@ -210,10 +302,7 @@ async def list_summaries():
         summaries = get_all_summaries()
         return {"summaries": summaries, "count": len(summaries)}
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to retrieve summaries: {str(e)}",
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to retrieve summaries: {str(e)}")
 
 
 @app.delete("/summaries/{summary_id}")

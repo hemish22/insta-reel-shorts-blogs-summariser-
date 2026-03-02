@@ -25,7 +25,7 @@ async function submitUrl() {
     const url = input.value.trim();
 
     if (!url) {
-        showStatus(status, 'Please enter a blog URL.', 'error');
+        showStatus(status, 'Please enter a URL.', 'error');
         input.focus();
         return;
     }
@@ -36,40 +36,125 @@ async function submitUrl() {
     }
 
     btn.disabled = true;
-    btnText.textContent = 'Summarizing...';
+    btnText.textContent = 'Processing...';
     spinner.classList.add('spinner--active');
-    const isYT = /youtube\.com|youtu\.be/.test(url);
-    const isIG = /instagram\.com/.test(url);
-    let statusMsg = '⏳ Scraping article and generating summary... This may take a few seconds.';
-    if (isYT) statusMsg = '⏳ Fetching transcript and generating summary... This may take a few seconds.';
-    if (isIG) statusMsg = '⏳ Downloading reel and transcribing... This may take 30-60 seconds.';
-    showStatus(status, statusMsg, 'loading');
     resultSection.style.display = 'none';
 
+    // Build progress stepper UI
+    status.className = 'status';
+    status.innerHTML = `
+        <div class="progress-stepper" id="progress-stepper">
+            <div class="progress-stepper__header">
+                <div class="progress-stepper__pulse"></div>
+                <span>Processing your URL...</span>
+            </div>
+            <div class="progress-stepper__steps" id="progress-steps"></div>
+        </div>
+    `;
+    status.style.display = 'block';
+
+    const stepsContainer = document.getElementById('progress-steps');
+
     try {
-        const response = await fetch(`${API_BASE}/summarize`, {
+        const response = await fetch(`${API_BASE}/summarize-stream`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url }),
         });
 
-        const data = await response.json();
-
         if (!response.ok) {
-            throw new Error(data.detail || 'Something went wrong.');
+            const errData = await response.json();
+            throw new Error(errData.detail || 'Something went wrong.');
         }
 
-        showStatus(status, '✅ Summary generated successfully!', 'success');
-        renderSummaryCard(resultSection, data);
-        resultSection.style.display = 'block';
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let finalResult = null;
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+
+            // Parse SSE events from buffer
+            const lines = buffer.split('\n');
+            buffer = lines.pop(); // Keep incomplete line in buffer
+
+            for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                    try {
+                        const event = JSON.parse(line.slice(6));
+                        updateProgressStep(stepsContainer, event);
+
+                        if (event.step === 'complete' && event.result) {
+                            finalResult = event.result;
+                        }
+                        if (event.step === 'error') {
+                            throw new Error(event.message.replace('❌ ', ''));
+                        }
+                    } catch (parseErr) {
+                        if (parseErr.message.includes('❌') || parseErr.message.includes('error')) {
+                            throw parseErr;
+                        }
+                        // Ignore JSON parse errors for partial data
+                    }
+                }
+            }
+        }
+
+        if (finalResult) {
+            // Show success in stepper
+            const header = document.querySelector('.progress-stepper__header');
+            if (header) {
+                header.innerHTML = '<span style="color: var(--success);">🎉 All steps complete!</span>';
+            }
+
+            // Render summary card after short delay for visual satisfaction
+            setTimeout(() => {
+                renderSummaryCard(resultSection, finalResult);
+                resultSection.style.display = 'block';
+            }, 500);
+        }
 
     } catch (err) {
-        showStatus(status, `❌ ${err.message}`, 'error');
+        const header = document.querySelector('.progress-stepper__header');
+        if (header) {
+            header.innerHTML = `<span style="color: var(--error);">❌ ${escapeHtml(err.message)}</span>`;
+        }
     } finally {
         btn.disabled = false;
         btnText.textContent = 'Summarize';
         spinner.classList.remove('spinner--active');
     }
+}
+
+// Update or add a progress step in the stepper
+function updateProgressStep(container, event) {
+    if (!container) return;
+    const stepId = `step-${event.step}`;
+    let stepEl = document.getElementById(stepId);
+
+    if (!stepEl) {
+        stepEl = document.createElement('div');
+        stepEl.id = stepId;
+        stepEl.className = 'progress-step';
+        container.appendChild(stepEl);
+    }
+
+    const statusIcon = event.status === 'active' ? '<div class="progress-step__spinner"></div>'
+        : event.status === 'done' ? '<span class="progress-step__check">✓</span>'
+            : '<span class="progress-step__error">✗</span>';
+
+    stepEl.className = `progress-step progress-step--${event.status}`;
+    stepEl.innerHTML = `
+        <div class="progress-step__icon">${statusIcon}</div>
+        <div class="progress-step__text">${escapeHtml(event.message)}</div>
+    `;
+
+    // Auto-scroll to bottom
+    container.scrollTop = container.scrollHeight;
 }
 
 // ──────────────────────────────────────────────
