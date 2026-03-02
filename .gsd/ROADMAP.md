@@ -1,7 +1,7 @@
 # ROADMAP.md
 
-> **Current Milestone**: v1.2 — Whisper ASR + Instagram Reels
-> **Previous Milestone**: v1.1 ✅ Complete
+> **Current Milestone**: v2.0 — Knowledge Base & Refinement
+> **Previous Milestone**: v1.3 ✅ Complete
 
 ---
 
@@ -15,9 +15,18 @@ Phase 1: Enhanced Dashboard ✅ | Phase 2: YouTube Transcript Summarization ✅
 
 ---
 
-## Milestone v1.2 — Whisper ASR + Instagram Reels
+## Milestone v1.2 — Whisper ASR + Instagram Reels ✅
+All tasks complete. Transcripts fallback, local Whisper, and Instagram support verified.
 
-> **Goal**: Unified text extraction layer — when transcripts are unavailable, download video, extract audio, run Whisper ASR to generate transcript, then summarize via Gemini. Support YouTube (no transcript), Instagram Reels, and any video with speech.
+---
+
+## Milestone v1.3 — Real-time Progress & UI Overhaul ✅
+Phase 4: SSE Progress Stepper ✅ | Phase 5: UI Overhaul (Slate theme) ✅
+
+---
+
+## Milestone v2.0 — Knowledge Base & Refinement
+> **Goal**: Transform the app from a simple summarizer into a powerful personal knowledge base. Add smart organization, manual refinement, and export capabilities.
 
 ### Must-Haves
 - [ ] Download video audio via `yt-dlp` (YouTube + Instagram)
@@ -44,6 +53,33 @@ Phase 1: Enhanced Dashboard ✅ | Phase 2: YouTube Transcript Summarization ✅
 - [ ] Update `main.py` — unified routing: blog / YouTube / Instagram
 - [ ] Update frontend — Instagram source indicator (📸), Reel metadata
 - [ ] Update database — `source_type: "instagram"` support
+
+#### Phase 6: Knowledge Base Organization
+**Status**: ✅ Complete
+- Advanced Sorting (Date, Difficulty, Domain)
+- Smart Search Logic
+- Interactive Stats & Filter Chips
+- AI categorization tags
+**Depends on**: Phase 5
+
+**Tasks**:
+- [ ] Implement Sort Dropdown (Date, Difficulty, Domain, Title)
+- [ ] Add Domain Tagging (AI, Web, ML, etc.) & chips
+- [ ] Implement Smart Search (Summary, Key Points, Tools)
+- [ ] Make Stats Cards interactive (Filtering on click)
+
+#### Phase 7: Personalization & Export
+**Status**: ✅ Complete
+- Favorites / Bookmarking system
+- Manual Summary Editing (refinement)
+- Export to Markdown & Copy to Clipboard
+- Premium Hover Animations (Glow & Elevation)
+
+**Tasks**:
+- [ ] **Favorites**: Add bookmark/star functionality
+- [ ] **Manual Refinement**: Add "Edit Summary" button + backend update
+- [ ] **Export System**: Markdown, PDF, Copy to Clipboard
+- [ ] **Visual Hierarchy**: Color-coded borders based on categories
 
 **Verification**:
 - YouTube video WITH transcript → uses API (fast, existing flow)

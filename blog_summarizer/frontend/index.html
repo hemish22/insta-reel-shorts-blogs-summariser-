@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📝</text></svg>">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -17,12 +18,15 @@
         <!-- Header -->
         <header class="header">
             <div class="header__logo">
-                <span class="header__icon">📝</span>
+                <i data-lucide="file-text" class="header__icon"></i>
                 <h1 class="header__title">Blog Summarizer</h1>
             </div>
             <p class="header__subtitle">Paste a blog, YouTube, or Instagram URL. Get a structured AI summary in seconds.
             </p>
-            <a href="/dashboard" class="nav-link">📊 View Dashboard</a>
+            <a href="/dashboard" class="nav-link">
+                <i data-lucide="layout-dashboard"></i>
+                View Dashboard
+            </a>
         </header>
 
         <!-- Input Section -->
@@ -31,6 +35,7 @@
                 <input type="url" id="url-input" class="input-field"
                     placeholder="Paste a blog, YouTube, or Instagram URL..." autocomplete="url" autofocus>
                 <button id="submit-btn" class="btn btn--primary" onclick="submitUrl()">
+                    <i data-lucide="zap" id="btn-icon"></i>
                     <span id="btn-text">Summarize</span>
                     <div id="btn-spinner" class="spinner"></div>
                 </button>

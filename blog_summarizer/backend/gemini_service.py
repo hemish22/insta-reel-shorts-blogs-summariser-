@@ -34,6 +34,7 @@ The JSON must have exactly these fields:
     "summary": "A comprehensive 2-3 sentence summary of the article's main message",
     "key_points": ["Point 1", "Point 2", "Point 3", "Point 4", "Point 5"],
     "difficulty": "Beginner OR Intermediate OR Advanced",
+    "category": "AI OR Web Dev OR ML OR Cybersecurity OR General",
     "takeaway": "The single most important actionable takeaway from this article"
 }}
 
@@ -42,6 +43,7 @@ Rules:
 - "summary": Capture the core message in 2-3 clear sentences.
 - "key_points": Extract exactly 5 key points. Each should be a concise, standalone insight.
 - "difficulty": Rate based on the technical depth and assumed reader knowledge.
+- "category": Choose the most relevant tag. Use "General" if none of the others fit strictly.
 - "takeaway": One actionable sentence the reader should remember.
 
 ARTICLE TEXT:
@@ -59,7 +61,8 @@ The JSON must have exactly these fields:
     "key_points": ["Insight 1", "Insight 2", "Insight 3", "Insight 4", "Insight 5"],
     "difficulty": "Beginner OR Intermediate OR Advanced",
     "takeaway": "The single most important actionable takeaway from this video",
-    "tools_mentioned": ["Tool or resource 1", "Tool or resource 2"]
+    "tools_mentioned": ["Tool or resource 1", "Tool or resource 2"],
+    "category": "AI OR Web Dev OR ML OR Cybersecurity OR General"
 }}
 
 Rules:
@@ -69,6 +72,7 @@ Rules:
 - "difficulty": Rate based on the technical depth and assumed viewer knowledge.
 - "takeaway": One actionable sentence the viewer should remember.
 - "tools_mentioned": List any tools, libraries, frameworks, services, or resources mentioned. Use an empty list [] if none.
+- "category": Choose the most relevant tag. Use "General" if none of the others fit strictly.
 
 VIDEO TRANSCRIPT:
 {transcript_text}
@@ -135,7 +139,7 @@ def summarize_text(text: str) -> dict:
     result = _call_gemini(prompt)
 
     # Validate required fields
-    required_fields = ["title", "summary", "key_points", "difficulty", "takeaway"]
+    required_fields = ["title", "summary", "key_points", "difficulty", "category", "takeaway"]
     for field in required_fields:
         if field not in result:
             raise RuntimeError(f"Gemini response missing required field: {field}")
@@ -144,10 +148,14 @@ def summarize_text(text: str) -> dict:
     if not isinstance(result["key_points"], list):
         result["key_points"] = [result["key_points"]]
 
-    # Validate difficulty
+    # Validate difficulty and category
     valid_difficulties = ["Beginner", "Intermediate", "Advanced"]
     if result["difficulty"] not in valid_difficulties:
         result["difficulty"] = "Intermediate"
+    
+    valid_categories = ["AI", "Web Dev", "ML", "Cybersecurity", "General"]
+    if result["category"] not in valid_categories:
+        result["category"] = "General"
 
     return result
 
@@ -163,7 +171,7 @@ def summarize_youtube(transcript_text: str) -> dict:
     result = _call_gemini(prompt)
 
     # Validate required fields
-    required_fields = ["title", "summary", "key_points", "difficulty", "takeaway"]
+    required_fields = ["title", "summary", "key_points", "difficulty", "category", "takeaway"]
     for field in required_fields:
         if field not in result:
             raise RuntimeError(f"Gemini response missing required field: {field}")
@@ -178,10 +186,14 @@ def summarize_youtube(transcript_text: str) -> dict:
     if not isinstance(result["tools_mentioned"], list):
         result["tools_mentioned"] = [result["tools_mentioned"]]
 
-    # Validate difficulty
+    # Validate difficulty and category
     valid_difficulties = ["Beginner", "Intermediate", "Advanced"]
     if result["difficulty"] not in valid_difficulties:
         result["difficulty"] = "Intermediate"
+
+    valid_categories = ["AI", "Web Dev", "ML", "Cybersecurity", "General"]
+    if result["category"] not in valid_categories:
+        result["category"] = "General"
 
     return result
 

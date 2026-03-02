@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="icon"
         href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
@@ -17,24 +18,33 @@
         <!-- Header -->
         <header class="header">
             <div class="header__logo">
-                <span class="header__icon">📊</span>
+                <i data-lucide="bar-chart-3" class="header__icon"></i>
                 <h1 class="header__title">Your Summaries</h1>
             </div>
             <p class="header__subtitle">Browse and search all your saved article summaries</p>
-            <a href="/" class="nav-link">📝 Summarize New Article</a>
+            <a href="/" class="nav-link">
+                <i data-lucide="plus"></i>
+                Summarize New
+            </a>
         </header>
 
         <!-- Stats Row -->
         <div class="dashboard-stats" id="stats-section">
             <div class="stat-card">
+                <i data-lucide="layers" class="detail-label"
+                    style="margin-bottom: 8px; display: block; height: 16px;"></i>
                 <div class="stat-card__number" id="total-count">—</div>
                 <div class="stat-card__label">Total Summaries</div>
             </div>
             <div class="stat-card">
+                <i data-lucide="globe" class="detail-label"
+                    style="margin-bottom: 8px; display: block; height: 16px;"></i>
                 <div class="stat-card__number" id="domains-count">—</div>
                 <div class="stat-card__label">Unique Sources</div>
             </div>
             <div class="stat-card">
+                <i data-lucide="calendar" class="detail-label"
+                    style="margin-bottom: 8px; display: block; height: 16px;"></i>
                 <div class="stat-card__number" id="latest-date">—</div>
                 <div class="stat-card__label">Latest</div>
             </div>
@@ -42,14 +52,32 @@
 
         <!-- Search & Filter Bar -->
         <div class="search-bar" id="search-bar" style="display: none;">
-            <div class="search-bar__input-wrap">
-                <span class="search-bar__icon">🔍</span>
-                <input type="text" id="search-input" class="search-bar__input"
-                    placeholder="Search by title, domain, or keyword..." autocomplete="off">
-                <button id="clear-search" class="search-bar__clear" style="display: none;"
-                    onclick="clearSearch()">✕</button>
+            <div class="search-bar__main">
+                <div class="search-bar__input-wrap">
+                    <span class="search-bar__icon"><i data-lucide="search"
+                            style="width: 16px; height: 16px;"></i></span>
+                    <input type="text" id="search-input" class="search-bar__input"
+                        placeholder="Search by title, summary, or tools..." autocomplete="off">
+                    <button id="clear-search" class="search-bar__clear" style="display: none;"
+                        onclick="clearSearch()">✕</button>
+                </div>
+                <div class="sort-control">
+                    <i data-lucide="filter" style="width: 14px; height: 14px; opacity: 0.6;"></i>
+                    <select id="sort-select" class="sort-select" onchange="handleSortChange()">
+                        <option value="date-desc">Newest First</option>
+                        <option value="date-asc">Oldest First</option>
+                        <option value="difficulty-asc">Difficulty (Low-High)</option>
+                        <option value="difficulty-desc">Difficulty (High-Low)</option>
+                        <option value="title-asc">Title (A-Z)</option>
+                        <option value="category">Domain / Category</option>
+                    </select>
+                </div>
             </div>
-            <div class="filter-chips" id="filter-chips"></div>
+            <div class="filter-group">
+                <div class="filter-chips" id="filter-chips"></div>
+                <!-- Dynamic categories will be injected here -->
+                <div class="category-chips" id="category-chips"></div>
+            </div>
         </div>
 
         <!-- Results Info -->

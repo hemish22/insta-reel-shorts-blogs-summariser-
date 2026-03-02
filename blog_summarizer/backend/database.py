@@ -33,6 +33,9 @@ def init_db() -> None:
                 original_url TEXT NOT NULL UNIQUE,
                 source_type TEXT NOT NULL DEFAULT 'blog',
                 tools_mentioned TEXT DEFAULT '[]',
+                category TEXT DEFAULT 'General',
+                is_favorite INTEGER NOT NULL DEFAULT 0,
+                summary_edited TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -44,6 +47,12 @@ def init_db() -> None:
             conn.execute("ALTER TABLE summaries ADD COLUMN source_type TEXT NOT NULL DEFAULT 'blog'")
         if "tools_mentioned" not in columns:
             conn.execute("ALTER TABLE summaries ADD COLUMN tools_mentioned TEXT DEFAULT '[]'")
+        if "category" not in columns:
+            conn.execute("ALTER TABLE summaries ADD COLUMN category TEXT DEFAULT 'General'")
+        if "is_favorite" not in columns:
+            conn.execute("ALTER TABLE summaries ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0")
+        if "summary_edited" not in columns:
+            conn.execute("ALTER TABLE summaries ADD COLUMN summary_edited TEXT")
 
         conn.commit()
     finally:
@@ -59,8 +68,8 @@ def save_summary(data: Dict[str, Any]) -> int:
     try:
         cursor = conn.execute(
             """
-            INSERT INTO summaries (title, domain, difficulty, summary, key_points, takeaway, original_url, source_type, tools_mentioned)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO summaries (title, domain, difficulty, summary, key_points, takeaway, original_url, source_type, tools_mentioned, category)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 data["title"],
@@ -72,6 +81,7 @@ def save_summary(data: Dict[str, Any]) -> int:
                 data["original_url"],
                 data.get("source_type", "blog"),
                 json.dumps(data.get("tools_mentioned", [])),
+                data.get("category", "General"),
             ),
         )
         conn.commit()
@@ -93,9 +103,13 @@ def get_all_summaries() -> List[Dict[str, Any]]:
             item = dict(row)
             item["key_points"] = json.loads(item["key_points"])
             item["tools_mentioned"] = json.loads(item.get("tools_mentioned", "[]") or "[]")
-            # Ensure source_type has a value
+            # Ensure defaults for migratable columns
             if not item.get("source_type"):
                 item["source_type"] = "blog"
+            if not item.get("category"):
+                item["category"] = "General"
+            item["is_favorite"] = bool(item.get("is_favorite", 0))
+            item["summary_edited"] = item.get("summary_edited")
             results.append(item)
         return results
     finally:
@@ -108,6 +122,34 @@ def delete_summary(summary_id: int) -> bool:
     try:
         cursor = conn.execute(
             "DELETE FROM summaries WHERE id = ?", (summary_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_favorite(summary_id: int, is_favorite: bool) -> bool:
+    """Update favorite status of a summary."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE summaries SET is_favorite = ? WHERE id = ?",
+            (1 if is_favorite else 0, summary_id)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+
+def update_summary_text(summary_id: int, new_text: str) -> bool:
+    """Update the summary text (manual refinement)."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "UPDATE summaries SET summary_edited = ? WHERE id = ?",
+            (new_text, summary_id)
         )
         conn.commit()
         return cursor.rowcount > 0

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse
 
 from models import SummarizeRequest, SummaryResponse
-from database import init_db, save_summary, get_all_summaries, delete_summary
+from database import init_db, save_summary, get_all_summaries, delete_summary, update_favorite, update_summary_text
 from scraper import scrape_article
 from gemini_service import summarize_text, summarize_youtube
 from youtube_service import is_youtube_url, fetch_transcript, extract_video_id, _fetch_via_api, _fetch_via_whisper
@@ -312,3 +312,28 @@ async def remove_summary(summary_id: int):
     if not deleted:
         raise HTTPException(status_code=404, detail="Summary not found.")
     return {"message": "Summary deleted.", "id": summary_id}
+
+
+@app.post("/summaries/{summary_id}/favorite")
+async def toggle_summary_favorite(summary_id: int, request: Request):
+    """Toggle the favorite status of a summary."""
+    data = await request.json()
+    is_favorite = data.get("is_favorite", False)
+    updated = update_favorite(summary_id, is_favorite)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+    return {"message": "Favorite status updated.", "is_favorite": is_favorite}
+
+
+@app.put("/summaries/{summary_id}/edit")
+async def edit_summary_content(summary_id: int, request: Request):
+    """Update the summary text for a specific entry."""
+    data = await request.json()
+    new_text = data.get("summary", "").strip()
+    if not new_text:
+        raise HTTPException(status_code=400, detail="Summary text cannot be empty.")
+    
+    updated = update_summary_text(summary_id, new_text)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+    return {"message": "Summary updated successfully.", "summary": new_text}
