@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Milestone**: v1.1 — Enhanced Dashboard + YouTube
+> **Current Milestone**: v1.1 — Enhanced Dashboard + YouTube ✅
 > **Previous Milestone**: v1.0 ✅ Complete
 
 ---
@@ -20,7 +20,7 @@ All 4 phases complete. Core flow working: URL → scrape → summarize → store
 - [x] Expand/collapse for summary details (compact list by default)
 - [x] Smooth animations and responsive mobile design
 - [x] Delete individual summaries
-- [ ] YouTube video summarization via transcript
+- [x] YouTube video summarization via transcript
 
 ### Phases
 
@@ -30,8 +30,8 @@ All 4 phases complete. Core flow working: URL → scrape → summarize → store
 
 ---
 
-#### Phase 2: YouTube Video Summarization
-**Status**: ⬜ Not Started
+#### Phase 2: YouTube Video Summarization ✅
+**Status**: ✅ Complete
 **Objective**: Allow users to paste a YouTube URL, extract the transcript, and summarize it via Gemini
 **Depends on**: Phase 1
 
