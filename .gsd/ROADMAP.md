@@ -1,6 +1,6 @@
 # ROADMAP.md
 
-> **Current Milestone**: v1.1 — Enhanced Dashboard
+> **Current Milestone**: v1.1 — Enhanced Dashboard + YouTube
 > **Previous Milestone**: v1.0 ✅ Complete
 
 ---
@@ -10,19 +10,40 @@ All 4 phases complete. Core flow working: URL → scrape → summarize → store
 
 ---
 
-## Milestone v1.1 — Enhanced Dashboard
+## Milestone v1.1 — Enhanced Dashboard + YouTube Support
 
-> **Goal**: A polished, easily accessible history page where all past summaries are stored with summarized text, original link, date, and platform.
+> **Goal**: Polished dashboard with search/filter/delete, plus YouTube video summarization via transcript extraction.
 
 ### Must-Haves
-- [ ] Clean, scannable card layout with date, platform/domain, and original link prominent
-- [ ] Search/filter bar to find past summaries quickly
-- [ ] Expand/collapse for summary details (compact list by default)
-- [ ] Smooth animations and responsive mobile design
-- [ ] Delete individual summaries
+- [x] Clean, scannable card layout with date, platform/domain, and original link prominent
+- [x] Search/filter bar to find past summaries quickly
+- [x] Expand/collapse for summary details (compact list by default)
+- [x] Smooth animations and responsive mobile design
+- [x] Delete individual summaries
+- [ ] YouTube video summarization via transcript
 
 ### Phases
 
-#### Phase 1: Enhanced Dashboard UI
+#### Phase 1: Enhanced Dashboard UI ✅
+**Status**: ✅ Complete
+**Objective**: Redesign the dashboard with compact card layout, search bar, expand/collapse, and delete
+
+---
+
+#### Phase 2: YouTube Video Summarization
 **Status**: ⬜ Not Started
-**Objective**: Redesign the dashboard with a compact card layout, prominent date + platform info, search bar, expand/collapse, and delete functionality
+**Objective**: Allow users to paste a YouTube URL, extract the transcript, and summarize it via Gemini
+**Depends on**: Phase 1
+
+**Tasks**:
+- [ ] Install `youtube-transcript-api` for transcript extraction
+- [ ] Create `youtube_service.py` — detect YouTube URLs, extract transcript
+- [ ] Update `main.py` `/summarize` endpoint to handle YouTube URLs alongside blog URLs
+- [ ] Create YouTube-specific Gemini prompt (key insights, tools mentioned, summary, optional timestamps)
+- [ ] Update frontend to show YouTube summaries with video metadata (channel, duration)
+- [ ] Update database schema if needed (source_type field: blog vs youtube)
+
+**Verification**:
+- Paste a YouTube tech video URL → get structured summary
+- Summary appears on dashboard with YouTube source indicator
+- Blog URL flow still works without regression
