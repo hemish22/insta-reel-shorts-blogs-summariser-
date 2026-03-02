@@ -83,3 +83,17 @@ def get_all_summaries() -> List[Dict[str, Any]]:
         return results
     finally:
         conn.close()
+
+
+def delete_summary(summary_id: int) -> bool:
+    """Delete a summary by ID. Returns True if deleted."""
+    conn = get_connection()
+    try:
+        cursor = conn.execute(
+            "DELETE FROM summaries WHERE id = ?", (summary_id,)
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+

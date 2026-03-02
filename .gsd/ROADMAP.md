@@ -1,27 +1,28 @@
 # ROADMAP.md
 
-> **Current Phase**: All complete ✅
-> **Milestone**: v1.0 — Blog Summarizer MVP
+> **Current Milestone**: v1.1 — Enhanced Dashboard
+> **Previous Milestone**: v1.0 ✅ Complete
 
-## Must-Haves (from SPEC)
-- [x] URL input → article extraction → Gemini summarization → SQLite storage → dashboard display
-- [x] Structured summary: title, domain, difficulty, summary, key points, takeaway, original URL
-- [x] Error handling for invalid URL, empty article, API failure, network timeout
+---
 
-## Phases
+## Milestone v1.0 — Blog Summarizer MVP ✅
+All 4 phases complete. Core flow working: URL → scrape → summarize → store → display.
 
-### Phase 1: Backend Foundation
-**Status**: ✅ Complete
-**Deliverables**: `main.py`, `database.py`, `models.py`, `scraper.py`, `requirements.txt`
+---
 
-### Phase 2: Gemini Integration & API Endpoint
-**Status**: ✅ Complete
-**Deliverables**: `gemini_service.py`, `/summarize` and `/summaries` endpoints
+## Milestone v1.1 — Enhanced Dashboard
 
-### Phase 3: Frontend
-**Status**: ✅ Complete
-**Deliverables**: `index.html`, `dashboard.html`, `styles.css`, `script.js`
+> **Goal**: A polished, easily accessible history page where all past summaries are stored with summarized text, original link, date, and platform.
 
-### Phase 4: Polish & Documentation
-**Status**: ✅ Complete
-**Deliverables**: `README.md`, `.env.example`, `.gitignore`, verified end-to-end
+### Must-Haves
+- [ ] Clean, scannable card layout with date, platform/domain, and original link prominent
+- [ ] Search/filter bar to find past summaries quickly
+- [ ] Expand/collapse for summary details (compact list by default)
+- [ ] Smooth animations and responsive mobile design
+- [ ] Delete individual summaries
+
+### Phases
+
+#### Phase 1: Enhanced Dashboard UI
+**Status**: ⬜ Not Started
+**Objective**: Redesign the dashboard with a compact card layout, prominent date + platform info, search bar, expand/collapse, and delete functionality

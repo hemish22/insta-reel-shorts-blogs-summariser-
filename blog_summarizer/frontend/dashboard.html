@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Blog Summarizer Dashboard — View all your saved article summaries.">
+    <meta name="description"
+        content="Blog Summarizer Dashboard — Browse, search, and manage all your saved article summaries.">
     <title>Dashboard — Blog Summarizer</title>
     <link rel="stylesheet" href="/static/styles.css">
     <link rel="icon"
@@ -12,18 +13,18 @@
 </head>
 
 <body>
-    <div class="container">
+    <div class="container container--wide">
         <!-- Header -->
         <header class="header">
             <div class="header__logo">
                 <span class="header__icon">📊</span>
-                <h1 class="header__title">Dashboard</h1>
+                <h1 class="header__title">Your Summaries</h1>
             </div>
-            <p class="header__subtitle">All your saved article summaries</p>
+            <p class="header__subtitle">Browse and search all your saved article summaries</p>
             <a href="/" class="nav-link">📝 Summarize New Article</a>
         </header>
 
-        <!-- Stats -->
+        <!-- Stats Row -->
         <div class="dashboard-stats" id="stats-section">
             <div class="stat-card">
                 <div class="stat-card__number" id="total-count">—</div>
@@ -31,12 +32,30 @@
             </div>
             <div class="stat-card">
                 <div class="stat-card__number" id="domains-count">—</div>
-                <div class="stat-card__label">Unique Domains</div>
+                <div class="stat-card__label">Unique Sources</div>
             </div>
             <div class="stat-card">
                 <div class="stat-card__number" id="latest-date">—</div>
                 <div class="stat-card__label">Latest</div>
             </div>
+        </div>
+
+        <!-- Search & Filter Bar -->
+        <div class="search-bar" id="search-bar" style="display: none;">
+            <div class="search-bar__input-wrap">
+                <span class="search-bar__icon">🔍</span>
+                <input type="text" id="search-input" class="search-bar__input"
+                    placeholder="Search by title, domain, or keyword..." autocomplete="off">
+                <button id="clear-search" class="search-bar__clear" style="display: none;"
+                    onclick="clearSearch()">✕</button>
+            </div>
+            <div class="filter-chips" id="filter-chips"></div>
+        </div>
+
+        <!-- Results Info -->
+        <div class="results-info" id="results-info" style="display: none;">
+            <span id="results-count"></span>
+            <button class="btn-text" id="expand-all-btn" onclick="toggleExpandAll()">Expand All</button>
         </div>
 
         <!-- Summaries List -->
@@ -45,7 +64,6 @@
 
     <script src="/static/script.js"></script>
     <script>
-        // Load summaries when dashboard page loads
         document.addEventListener('DOMContentLoaded', loadSummaries);
     </script>
 </body>

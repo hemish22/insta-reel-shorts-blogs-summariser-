@@ -21,8 +21,8 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# Use Gemini 1.5 Flash for speed and cost efficiency
-MODEL_NAME = "gemini-1.5-flash"
+# Use Gemini 2.5 Flash for speed and quality
+MODEL_NAME = "gemini-2.5-flash"
 
 SUMMARIZATION_PROMPT = """You are an expert blog summarizer. Analyze the following blog article and return a structured JSON summary.
 

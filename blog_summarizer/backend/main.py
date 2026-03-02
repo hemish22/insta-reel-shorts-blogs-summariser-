@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from models import SummarizeRequest, SummaryResponse
-from database import init_db, save_summary, get_all_summaries
+from database import init_db, save_summary, get_all_summaries, delete_summary
 from scraper import scrape_article
 from gemini_service import summarize_text
 
@@ -139,3 +139,12 @@ async def list_summaries():
             status_code=500,
             detail=f"Failed to retrieve summaries: {str(e)}",
         )
+
+
+@app.delete("/summaries/{summary_id}")
+async def remove_summary(summary_id: int):
+    """Delete a summary by ID."""
+    deleted = delete_summary(summary_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Summary not found.")
+    return {"message": "Summary deleted.", "id": summary_id}
