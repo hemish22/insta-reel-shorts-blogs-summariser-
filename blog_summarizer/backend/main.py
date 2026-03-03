@@ -1,6 +1,7 @@
 """
 FastAPI application for Blog Summarizer.
 Supports Blog, YouTube, and Instagram URL summarization with real-time progress.
+Includes Telegram Bot webhook for mobile ingestion.
 """
 
 import os
@@ -21,6 +22,11 @@ from instagram_service import is_instagram_url, fetch_instagram_transcript, extr
 from audio_service import download_audio, cleanup_audio
 from whisper_service import transcribe_audio
 from transcript_cleaner import clean_transcript
+from telegram_service import (
+    extract_url_from_text, format_summary_for_telegram,
+    send_telegram_message, send_typing_action,
+    register_webhook, get_bot_info,
+)
 
 
 @asynccontextmanager
@@ -337,3 +343,161 @@ async def edit_summary_content(summary_id: int, request: Request):
     if not updated:
         raise HTTPException(status_code=404, detail="Summary not found.")
     return {"message": "Summary updated successfully.", "summary": new_text}
+
+
+# ──────────────────────────────────────────────
+# Telegram Bot Webhook
+# ──────────────────────────────────────────────
+
+@app.post("/telegram-webhook")
+async def telegram_webhook(request: Request):
+    """
+    Receive messages from Telegram Bot API.
+    Extracts URL from message, summarizes it, saves to DB, and replies.
+    """
+    data = await request.json()
+    message = data.get("message", {})
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
+    user_first_name = message.get("from", {}).get("first_name", "there")
+
+    if not chat_id:
+        return {"ok": True}  # Ignore non-message updates
+
+    # Handle /start command
+    if text.strip() == "/start":
+        welcome = (
+            f"👋 Hey {user_first_name}\\!\n\n"
+            "I'm your *AI Knowledge Base Bot*\.\n\n"
+            "Send me any link and I'll summarize it:\n"
+            "  📝 Blog articles\n"
+            "  🎬 YouTube videos\n"
+            "  📸 Instagram Reels\n\n"
+            "Just paste a URL and I'll handle the rest\\!"
+        )
+        await send_telegram_message(chat_id, welcome)
+        return {"ok": True}
+
+    # Handle /help command
+    if text.strip() == "/help":
+        help_text = (
+            "🔧 *How to use me:*\n\n"
+            "1\\. Send me any URL \\(blog, YouTube, Instagram\\)\n"
+            "2\\. I'll scrape, transcribe, and summarize it\n"
+            "3\\. Summary is saved to your dashboard\n\n"
+            "Just paste a link and I'll do the rest\\!"
+        )
+        await send_telegram_message(chat_id, help_text)
+        return {"ok": True}
+
+    # Extract URL from message
+    url = extract_url_from_text(text)
+    if not url:
+        await send_telegram_message(
+            chat_id,
+            "🤔 I didn't find a URL in your message\.\n\nSend me a blog, YouTube, or Instagram link to summarize\\!"
+        )
+        return {"ok": True}
+
+    # Show typing indicator
+    await send_typing_action(chat_id)
+
+    # Acknowledge receipt
+    await send_telegram_message(
+        chat_id,
+        f"⚡ Got it\\! Processing your link\\.\.\\."
+    )
+
+    try:
+        # ── Reuse existing summarization logic ──
+        if is_instagram_url(url):
+            await send_typing_action(chat_id)
+            audio_path = await asyncio.to_thread(download_audio, url)
+            whisper_result = await asyncio.to_thread(transcribe_audio, audio_path)
+            cleanup_audio(audio_path)
+            cleaned_text = clean_transcript(whisper_result["text"])
+
+            if not cleaned_text or len(cleaned_text) < 20:
+                await send_telegram_message(chat_id, "❌ No meaningful speech found in this reel\.")
+                return {"ok": True}
+
+            if len(cleaned_text) > 30000:
+                cleaned_text = cleaned_text[:30000]
+
+            summary_data = await asyncio.to_thread(summarize_youtube, cleaned_text)
+            result = {
+                "title": summary_data["title"], "domain": "instagram.com",
+                "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+                "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+                "original_url": url, "source_type": "instagram",
+                "tools_mentioned": summary_data.get("tools_mentioned", []),
+            }
+
+        elif is_youtube_url(url):
+            await send_typing_action(chat_id)
+            transcript_data = await asyncio.to_thread(fetch_transcript, url)
+            summary_data = await asyncio.to_thread(summarize_youtube, transcript_data["text"])
+            result = {
+                "title": summary_data["title"], "domain": "youtube.com",
+                "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+                "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+                "original_url": url, "source_type": "youtube",
+                "tools_mentioned": summary_data.get("tools_mentioned", []),
+            }
+
+        else:
+            await send_typing_action(chat_id)
+            article = await asyncio.to_thread(scrape_article, url)
+            summary_data = await asyncio.to_thread(summarize_text, article["text"])
+            result = {
+                "title": summary_data["title"], "domain": article["domain"],
+                "difficulty": summary_data["difficulty"], "summary": summary_data["summary"],
+                "key_points": summary_data["key_points"], "takeaway": summary_data["takeaway"],
+                "original_url": url, "source_type": "blog", "tools_mentioned": [],
+            }
+
+        # Save to DB
+        try:
+            row_id = save_summary(result)
+            result["id"] = row_id
+        except Exception as e:
+            result["id"] = None
+
+        # Send formatted summary reply
+        reply = format_summary_for_telegram(result)
+        await send_telegram_message(chat_id, reply)
+
+    except Exception as e:
+        error_msg = str(e).replace(".", "\\.").replace("!", "\\!").replace("-", "\\-")
+        await send_telegram_message(
+            chat_id,
+            f"❌ Sorry, something went wrong:\n`{error_msg}`"
+        )
+
+    return {"ok": True}
+
+
+@app.get("/telegram-setup")
+async def telegram_setup(webhook_url: str = ""):
+    """
+    Helper to register Telegram webhook and verify bot config.
+    Usage: GET /telegram-setup?webhook_url=https://your-ngrok-url.ngrok-free.app/telegram-webhook
+    """
+    bot_info = await get_bot_info()
+
+    if not webhook_url:
+        return {
+            "bot": bot_info,
+            "instructions": "Pass ?webhook_url=https://your-domain/telegram-webhook to register.",
+        }
+
+    # Ensure webhook URL ends with /telegram-webhook
+    if not webhook_url.endswith("/telegram-webhook"):
+        webhook_url = webhook_url.rstrip("/") + "/telegram-webhook"
+
+    result = await register_webhook(webhook_url)
+    return {
+        "bot": bot_info,
+        "webhook_registration": result,
+        "webhook_url": webhook_url,
+    }

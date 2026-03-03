@@ -39,6 +39,11 @@
 - **Copy to Clipboard** — One click copies a neatly formatted Markdown version.
 - **Download as `.md`** — Download any summary as a Markdown file for use in Notion, Obsidian, etc.
 
+### 🤖 Telegram Bot
+- **Mobile Ingestion** — Share any URL from your phone to a Telegram Bot and it auto-summarizes.
+- **Commands** — `/start` (welcome), `/help` (usage), or just paste a URL.
+- **Same Knowledge Base** — Summaries land on your dashboard alongside web-submitted ones.
+
 ---
 
 ## 🚀 Getting Started
@@ -97,6 +102,41 @@ uvicorn main:app --reload
 | Homepage   | [http://localhost:8000](http://localhost:8000)         |
 | Dashboard  | [http://localhost:8000/dashboard](http://localhost:8000/dashboard) |
 
+### 6. (Optional) Connect Telegram Bot
+
+This lets you share URLs directly from your phone.
+
+**Step A — Create a Telegram Bot:**
+1. Open Telegram and search for **@BotFather**
+2. Send `/newbot` and follow the prompts
+3. Copy the **Bot Token** you receive (looks like `123456:ABC-XYZ...`)
+
+**Step B — Add token to `.env`:**
+```env
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+```
+
+**Step C — Expose your server (for local dev):**
+```bash
+# Install ngrok (one-time)
+brew install ngrok   # macOS
+# or: snap install ngrok   # Linux
+
+# Start tunnel
+ngrok http 8000
+```
+
+**Step D — Register webhook:**
+
+Open this URL in your browser (replace with your ngrok URL):
+```
+http://localhost:8000/telegram-setup?webhook_url=https://xxxx.ngrok-free.app
+```
+
+**That's it!** Now send any URL to your bot on Telegram → it summarizes and saves to your dashboard.
+
+> 💡 **For production:** Deploy to Render/Railway and use your public domain as the webhook URL instead of ngrok.
+
 ---
 
 ## 📁 Project Structure
@@ -115,6 +155,7 @@ insta-reel-shorts-blogs-summariser-/
 │   │   ├── transcript_cleaner.py   # Filler word removal, text cleanup
 │   │   ├── database.py             # SQLite schema, migrations, CRUD
 │   │   ├── models.py               # Pydantic request/response models
+│   │   ├── telegram_service.py     # Telegram Bot API helpers
 │   │   ├── requirements.txt        # Python dependencies
 │   │   ├── .env.example            # Template for API key configuration
 │   │   └── .env                    # Your actual API key (git-ignored)
@@ -143,6 +184,8 @@ insta-reel-shorts-blogs-summariser-/
 | `DELETE` | `/summaries/{id}`                 | Delete a summary                      |
 | `POST`   | `/summaries/{id}/favorite`       | Toggle favorite status                |
 | `PUT`    | `/summaries/{id}/edit`           | Update summary text (manual edit)     |
+| `POST`   | `/telegram-webhook`              | Telegram Bot webhook (auto-called by Telegram) |
+| `GET`    | `/telegram-setup`                | Register webhook URL with Telegram    |
 
 ### Example: Summarize a URL
 
@@ -175,8 +218,9 @@ All configuration is done through the `.env` file in `blog_summarizer/backend/`:
 | Variable          | Required | Description                                              |
 |-------------------|----------|----------------------------------------------------------|
 | `GEMINI_API_KEY`  | ✅ Yes    | Your Google Gemini API key from [AI Studio](https://aistudio.google.com/apikey) |
+| `TELEGRAM_BOT_TOKEN` | ❌ Optional | Your Telegram Bot token from [@BotFather](https://t.me/BotFather). Only needed for Telegram integration. |
 
-> **No other environment variables are needed.** The app uses SQLite (file-based, zero configuration) and downloads Whisper models automatically.
+> **SQLite** is used for storage (zero config). Whisper models download automatically on first use.
 
 ---
 
