@@ -79,6 +79,74 @@ VIDEO TRANSCRIPT:
 """
 
 
+import re as _re
+
+
+def _parse_json_robust(text: str) -> dict:
+    """
+    Attempt to parse JSON with multiple recovery strategies:
+    1. Direct parse
+    2. Auto-close truncated brackets/braces
+    3. Regex field extraction as last resort
+    """
+    # Strategy 1: Direct parse
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 2: Auto-close truncated JSON
+    # Count open vs close brackets and braces
+    repaired = text.rstrip().rstrip(",")
+    open_braces = repaired.count("{") - repaired.count("}")
+    open_brackets = repaired.count("[") - repaired.count("]")
+
+    # Check if we're in the middle of a string value (unclosed quote)
+    quote_count = repaired.count('"')
+    if quote_count % 2 != 0:
+        repaired += '"'
+
+    repaired += "]" * max(0, open_brackets)
+    repaired += "}" * max(0, open_braces)
+
+    try:
+        return json.loads(repaired)
+    except json.JSONDecodeError:
+        pass
+
+    # Strategy 3: Regex extraction of known fields
+    def _extract(field_name: str, fallback=""):
+        pattern = rf'"{field_name}"\s*:\s*"((?:[^"\\]|\\.)*)?"'
+        m = _re.search(pattern, text, _re.DOTALL)
+        return m.group(1).replace('\\"', '"') if m else fallback
+
+    def _extract_list(field_name: str):
+        pattern = rf'"{field_name}"\s*:\s*\[(.*?)\]'
+        m = _re.search(pattern, text, _re.DOTALL)
+        if m:
+            items = _re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))
+            return items
+        return []
+
+    result = {
+        "title": _extract("title", "Untitled"),
+        "summary": _extract("summary", text[:300]),
+        "key_points": _extract_list("key_points") or ["See summary above"],
+        "difficulty": _extract("difficulty", "Intermediate"),
+        "category": _extract("category", "General"),
+        "takeaway": _extract("takeaway", "See summary for details."),
+        "tools_mentioned": _extract_list("tools_mentioned"),
+    }
+
+    # Validate we got at least a title or summary
+    if result["title"] == "Untitled" and result["summary"] == text[:300]:
+        raise RuntimeError(
+            f"Gemini returned unparseable response:\n{text[:500]}"
+        )
+
+    return result
+
+
 def _call_gemini(prompt: str) -> dict:
     """
     Send a prompt to Gemini and parse the JSON response.
@@ -104,14 +172,8 @@ def _call_gemini(prompt: str) -> dict:
             lines = [l for l in lines if not l.strip().startswith("```")]
             response_text = "\n".join(lines).strip()
 
-        # Parse JSON
-        try:
-            result = json.loads(response_text)
-        except json.JSONDecodeError:
-            raise RuntimeError(
-                f"Gemini returned invalid JSON. Raw response:\n{response_text[:500]}"
-            )
-
+        # Parse JSON — with robust recovery for truncated responses
+        result = _parse_json_robust(response_text)
         return result
 
     except genai.types.BlockedPromptException:
