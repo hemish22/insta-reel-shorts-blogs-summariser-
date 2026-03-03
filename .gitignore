@@ -25,7 +25,7 @@ wheels/
 *.db
 *.sqlite3
 
-# Environment
+# Environment / Secrets
 .env
 .venv
 venv/
@@ -44,7 +44,15 @@ Thumbs.db
 .vscode/
 .idea/
 
-# Agentic / Internal
+# Agentic / Internal tooling
 .agent/
 .gemini/
+.gsd/
 /tmp/
+
+# Project-specific
+GSD-STYLE.md
+PROJECT_RULES.md
+model_capabilities.yaml
+adapters/
+scripts/

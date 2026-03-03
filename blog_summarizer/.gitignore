@@ -1,4 +1,22 @@
+# Database (user-specific data)
 *.db
+*.sqlite3
+
+# Environment / Secrets
 .env
+
+# Python
 __pycache__/
+*.py[cod]
 *.pyc
+
+# Audio temp files (whisper processing)
+*.wav
+*.mp3
+*.m4a
+
+# OS
+.DS_Store
+
+# GSD internal state
+.gsd/
