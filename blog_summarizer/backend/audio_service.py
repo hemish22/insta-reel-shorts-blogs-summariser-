@@ -79,6 +79,29 @@ def download_audio(url: str) -> str:
             cleanup_audio(output_path)
             raise RuntimeError("Downloaded audio file is too small or corrupted.")
 
+        # ── Convert to 16kHz mono WAV for faster Whisper processing ──
+        optimized_path = output_path.replace(".wav", "_16k.wav")
+        try:
+            conv_result = subprocess.run(
+                [
+                    "ffmpeg", "-y",
+                    "-i", output_path,
+                    "-ar", "16000",   # 16kHz sample rate (Whisper native)
+                    "-ac", "1",       # mono
+                    "-c:a", "pcm_s16le",
+                    optimized_path,
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if conv_result.returncode == 0 and os.path.exists(optimized_path):
+                cleanup_audio(output_path)  # Remove original
+                output_path = optimized_path
+                print(f"✅ Audio converted to 16kHz mono ({os.path.getsize(output_path) // 1024}KB)")
+        except Exception:
+            pass  # If conversion fails, use original file
+
         return output_path
 
     except subprocess.TimeoutExpired:

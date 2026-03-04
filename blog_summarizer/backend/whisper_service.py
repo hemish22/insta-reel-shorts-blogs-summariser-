@@ -1,25 +1,29 @@
 """
 Whisper speech-to-text service.
-Transcribes audio files using OpenAI's Whisper model (local).
+Uses faster-whisper for optimized CPU transcription (4-10x faster than openai-whisper).
 """
 
-import whisper
+from faster_whisper import WhisperModel
 
 # ──────────────────────────────────────────────
 # Model Loading (lazy, cached)
 # ──────────────────────────────────────────────
 
 _model = None
-MODEL_NAME = "base"  # ~150MB, runs on CPU. Options: tiny, base, small, medium, large
+MODEL_SIZE = "tiny"  # ~75MB. Options: tiny, base, small, medium, large-v3
 
 
 def _get_model():
-    """Load the Whisper model lazily (only on first use)."""
+    """Load the faster-whisper model lazily (only on first use)."""
     global _model
     if _model is None:
-        print(f"🎙️ Loading Whisper '{MODEL_NAME}' model (first-time download ~150MB)...")
-        _model = whisper.load_model(MODEL_NAME)
-        print("✅ Whisper model loaded")
+        print(f"🎙️ Loading faster-whisper '{MODEL_SIZE}' model...")
+        _model = WhisperModel(
+            MODEL_SIZE,
+            device="cpu",
+            compute_type="int8",  # Quantized for speed on CPU
+        )
+        print("✅ Whisper model loaded (faster-whisper, int8)")
     return _model
 
 
@@ -29,7 +33,7 @@ def _get_model():
 
 def transcribe_audio(audio_path: str) -> dict:
     """
-    Transcribe an audio file using Whisper.
+    Transcribe an audio file using faster-whisper.
 
     Args:
         audio_path: Path to audio file (.wav, .mp3, .m4a, etc.)
@@ -43,15 +47,17 @@ def transcribe_audio(audio_path: str) -> dict:
     try:
         model = _get_model()
 
-        print(f"🎙️ Transcribing audio... (this may take a moment)")
-        result = model.transcribe(
+        print(f"🎙️ Transcribing audio with faster-whisper...")
+        segments, info = model.transcribe(
             audio_path,
-            fp16=False,  # CPU mode
-            language=None,  # Auto-detect language
+            beam_size=1,         # Greedy decoding = fastest
+            best_of=1,
+            vad_filter=True,     # Skip silence segments = faster
         )
 
-        text = result.get("text", "").strip()
-        language = result.get("language", "unknown")
+        # Collect all segment text
+        text = " ".join(segment.text.strip() for segment in segments).strip()
+        language = info.language or "unknown"
 
         if not text or len(text) < 20:
             raise RuntimeError(
