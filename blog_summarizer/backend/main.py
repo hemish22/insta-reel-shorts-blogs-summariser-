@@ -359,70 +359,17 @@ async def edit_summary_content(summary_id: int, request: Request):
 
 
 # ──────────────────────────────────────────────
-# Telegram Bot Webhook
+# Telegram Bot Webhook (Background Processing)
 # ──────────────────────────────────────────────
 
-@app.post("/telegram-webhook")
-async def telegram_webhook(request: Request):
-    """
-    Receive messages from Telegram Bot API.
-    Extracts URL from message, summarizes it, saves to DB, and replies.
-    """
-    data = await request.json()
-    message = data.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    text = message.get("text", "")
-    user_first_name = message.get("from", {}).get("first_name", "there")
+# Dedup set to prevent processing the same message twice on Telegram retries
+_processed_messages = set()
+_MAX_DEDUP_SIZE = 500
 
-    if not chat_id:
-        return {"ok": True}  # Ignore non-message updates
 
-    # Handle /start command
-    if text.strip() == "/start":
-        welcome = (
-            f"👋 Hey {user_first_name}\\!\n\n"
-            "I'm your *AI Knowledge Base Bot*\.\n\n"
-            "Send me any link and I'll summarize it:\n"
-            "  📝 Blog articles\n"
-            "  🎬 YouTube videos\n"
-            "  📸 Instagram Reels\n\n"
-            "Just paste a URL and I'll handle the rest\\!"
-        )
-        await send_telegram_message(chat_id, welcome)
-        return {"ok": True}
-
-    # Handle /help command
-    if text.strip() == "/help":
-        help_text = (
-            "🔧 *How to use me:*\n\n"
-            "1\\. Send me any URL \\(blog, YouTube, Instagram\\)\n"
-            "2\\. I'll scrape, transcribe, and summarize it\n"
-            "3\\. Summary is saved to your dashboard\n\n"
-            "Just paste a link and I'll do the rest\\!"
-        )
-        await send_telegram_message(chat_id, help_text)
-        return {"ok": True}
-
-    # Extract URL from message
-    url = extract_url_from_text(text)
-    if not url:
-        await send_telegram_message(
-            chat_id,
-            "🤔 I didn't find a URL in your message\.\n\nSend me a blog, YouTube, or Instagram link to summarize\\!"
-        )
-        return {"ok": True}
-
-    # Show typing indicator
-    await send_typing_action(chat_id)
-
-    # Acknowledge receipt
-    await send_telegram_message(
-        chat_id,
-        f"⚡ Got it\\! Processing your link\\.\.\\."
-    )
-
+async def _process_telegram_url(chat_id: int, url: str):
+    """Background task: summarize a URL and reply via Telegram."""
     try:
-        # ── Reuse existing summarization logic ──
         if is_instagram_url(url):
             await send_typing_action(chat_id)
             audio_path = await asyncio.to_thread(download_audio, url)
@@ -431,8 +378,8 @@ async def telegram_webhook(request: Request):
             cleaned_text = clean_transcript(whisper_result["text"])
 
             if not cleaned_text or len(cleaned_text) < 20:
-                await send_telegram_message(chat_id, "❌ No meaningful speech found in this reel\.")
-                return {"ok": True}
+                await send_telegram_message(chat_id, "❌ No meaningful speech found in this reel\\.")
+                return
 
             if len(cleaned_text) > 30000:
                 cleaned_text = cleaned_text[:30000]
@@ -473,7 +420,7 @@ async def telegram_webhook(request: Request):
         try:
             row_id = save_summary(result)
             result["id"] = row_id
-        except Exception as e:
+        except Exception:
             result["id"] = None
 
         # Send formatted summary reply
@@ -487,7 +434,79 @@ async def telegram_webhook(request: Request):
             f"❌ Sorry, something went wrong:\n`{error_msg}`"
         )
 
+
+@app.post("/telegram-webhook")
+async def telegram_webhook(request: Request):
+    """
+    Receive messages from Telegram Bot API.
+    Returns immediately to prevent Telegram retries, then processes in background.
+    """
+    data = await request.json()
+    message = data.get("message", {})
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
+    message_id = message.get("message_id")
+    user_first_name = message.get("from", {}).get("first_name", "there")
+
+    if not chat_id:
+        return {"ok": True}
+
+    # ── Dedup: skip if we already processed this exact message ──
+    if message_id and message_id in _processed_messages:
+        return {"ok": True}
+    if message_id:
+        _processed_messages.add(message_id)
+        # Prevent memory leak: trim the set if it gets too large
+        if len(_processed_messages) > _MAX_DEDUP_SIZE:
+            _processed_messages.clear()
+
+    # Handle /start command
+    if text.strip() == "/start":
+        welcome = (
+            f"👋 Hey {user_first_name}\\!\n\n"
+            "I'm your *AI Knowledge Base Bot*\\.\n\n"
+            "Send me any link and I'll summarize it:\n"
+            "  📝 Blog articles\n"
+            "  🎬 YouTube videos\n"
+            "  📸 Instagram Reels\n\n"
+            "Just paste a URL and I'll handle the rest\\!"
+        )
+        await send_telegram_message(chat_id, welcome)
+        return {"ok": True}
+
+    # Handle /help command
+    if text.strip() == "/help":
+        help_text = (
+            "🔧 *How to use me:*\n\n"
+            "1\\. Send me any URL \\(blog, YouTube, Instagram\\)\n"
+            "2\\. I'll scrape, transcribe, and summarize it\n"
+            "3\\. Summary is saved to your dashboard\n\n"
+            "Just paste a link and I'll do the rest\\!"
+        )
+        await send_telegram_message(chat_id, help_text)
+        return {"ok": True}
+
+    # Extract URL from message
+    url = extract_url_from_text(text)
+    if not url:
+        await send_telegram_message(
+            chat_id,
+            "🤔 I didn't find a URL in your message\\.\n\nSend me a blog, YouTube, or Instagram link to summarize\\!"
+        )
+        return {"ok": True}
+
+    # Acknowledge receipt immediately
+    await send_telegram_message(
+        chat_id,
+        "⚡ Got it\\! Processing your link\\.\\.\\."
+    )
+
+    # ── Fire-and-forget: process in background so Telegram doesn't retry ──
+    asyncio.create_task(_process_telegram_url(chat_id, url))
+
+    # Return immediately — Telegram won't retry
     return {"ok": True}
+
 
 
 @app.get("/telegram-setup")
