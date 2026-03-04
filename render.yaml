@@ -1,0 +1,14 @@
+# Render Blueprint — one-click deploy
+# https://render.com/docs/blueprint-spec
+
+services:
+  - type: web
+    name: blog-summarizer
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false   # You must set this manually in Render dashboard
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # You must set this manually in Render dashboard

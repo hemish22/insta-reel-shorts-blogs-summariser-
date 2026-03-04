@@ -89,57 +89,66 @@ def _parse_json_robust(text: str) -> dict:
     2. Auto-close truncated brackets/braces
     3. Regex field extraction as last resort
     """
-    # Strategy 1: Direct parse
+    # Strategy 1 & 2: Try parsing direct or repaired JSON
+    parsed_dict = None
     try:
-        return json.loads(text)
+        parsed_dict = json.loads(text)
     except json.JSONDecodeError:
-        pass
+        # Auto-close truncated JSON
+        repaired = text.rstrip().rstrip(",")
+        open_braces = repaired.count("{") - repaired.count("}")
+        open_brackets = repaired.count("[") - repaired.count("]")
 
-    # Strategy 2: Auto-close truncated JSON
-    # Count open vs close brackets and braces
-    repaired = text.rstrip().rstrip(",")
-    open_braces = repaired.count("{") - repaired.count("}")
-    open_brackets = repaired.count("[") - repaired.count("]")
+        quote_count = repaired.count('"')
+        if quote_count % 2 != 0:
+            repaired += '"'
 
-    # Check if we're in the middle of a string value (unclosed quote)
-    quote_count = repaired.count('"')
-    if quote_count % 2 != 0:
-        repaired += '"'
+        repaired += "]" * max(0, open_brackets)
+        repaired += "}" * max(0, open_braces)
 
-    repaired += "]" * max(0, open_brackets)
-    repaired += "}" * max(0, open_braces)
-
-    try:
-        return json.loads(repaired)
-    except json.JSONDecodeError:
-        pass
+        try:
+            parsed_dict = json.loads(repaired)
+        except json.JSONDecodeError:
+            pass
 
     # Strategy 3: Regex extraction of known fields
     def _extract(field_name: str, fallback=""):
-        pattern = rf'"{field_name}"\s*:\s*"((?:[^"\\]|\\.)*)?"'
+        pattern = rf'"{field_name}"\s*:\s*"((?:[^"\\]|\\.)*)'
         m = _re.search(pattern, text, _re.DOTALL)
-        return m.group(1).replace('\\"', '"') if m else fallback
+        return m.group(1).rstrip('"').replace('\\"', '"') if m else fallback
 
     def _extract_list(field_name: str):
-        pattern = rf'"{field_name}"\s*:\s*\[(.*?)\]'
+        pattern = rf'"{field_name}"\s*:\s*\[(.*)(?:\]|$)'
         m = _re.search(pattern, text, _re.DOTALL)
         if m:
-            items = _re.findall(r'"((?:[^"\\]|\\.)*)"', m.group(1))
-            return items
+            items = _re.findall(r'"((?:[^"\\]|\\.)*)', m.group(1))
+            return [item.rstrip('"') for item in items if item]
         return []
 
-    result = {
-        "title": _extract("title", "Untitled"),
-        "summary": _extract("summary", text[:300]),
-        "key_points": _extract_list("key_points") or ["See summary above"],
-        "difficulty": _extract("difficulty", "Intermediate"),
-        "category": _extract("category", "General"),
-        "takeaway": _extract("takeaway", "See summary for details."),
-        "tools_mentioned": _extract_list("tools_mentioned"),
-    }
+    if parsed_dict is None:
+        # Use entirely regex if JSON parsing completely failed
+        result = {
+            "title": _extract("title", "Untitled"),
+            "summary": _extract("summary", text[:300]),
+            "key_points": _extract_list("key_points") or ["See summary above"],
+            "difficulty": _extract("difficulty", "Intermediate"),
+            "category": _extract("category", "General"),
+            "takeaway": _extract("takeaway", "See summary for details."),
+            "tools_mentioned": _extract_list("tools_mentioned"),
+        }
+    else:
+        # JSON parsed successfully (perhaps repaired), but might be missing fields due to truncation
+        result = parsed_dict
+        if "title" not in result: result["title"] = _extract("title", "Untitled")
+        if "summary" not in result: result["summary"] = _extract("summary", text[:300])
+        if "key_points" not in result: result["key_points"] = _extract_list("key_points") or ["See summary above"]
+        if "difficulty" not in result: result["difficulty"] = _extract("difficulty", "Intermediate")
+        if "category" not in result: result["category"] = _extract("category", "General")
+        if "takeaway" not in result: result["takeaway"] = _extract("takeaway", "See summary for details.")
+        if "tools_mentioned" not in result: result["tools_mentioned"] = _extract_list("tools_mentioned")
 
-    # Validate we got at least a title or summary
-    if result["title"] == "Untitled" and result["summary"] == text[:300]:
+    # Validate we got at least a title or summary or key points
+    if result["title"] == "Untitled" and result["summary"] == text[:300] and result.get("key_points") == ["See summary above"]:
         raise RuntimeError(
             f"Gemini returned unparseable response:\n{text[:500]}"
         )

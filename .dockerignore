@@ -1,0 +1,18 @@
+# Docker ignore — keep the image lean
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+.env
+.venv
+venv/
+.git/
+.gitignore
+.gsd/
+.agent/
+.gemini/
+.DS_Store
+*.egg-info/
+node_modules/
+.pytest_cache/

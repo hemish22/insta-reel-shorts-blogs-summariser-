@@ -31,9 +31,22 @@ from telegram_service import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Initialize database on startup."""
+    """Initialize database on startup and auto-register Telegram webhook on Render."""
     init_db()
     print("✅ Database initialized")
+
+    # Auto-register Telegram webhook on Render (RENDER_EXTERNAL_URL is set automatically)
+    render_url = os.getenv("RENDER_EXTERNAL_URL", "")
+    telegram_token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    if render_url and telegram_token:
+        webhook_url = f"{render_url}/telegram-webhook"
+        try:
+            result = await register_webhook(webhook_url)
+            print(f"✅ Telegram webhook auto-registered: {webhook_url}")
+            print(f"   Result: {result}")
+        except Exception as e:
+            print(f"⚠️ Telegram webhook auto-registration failed: {e}")
+
     yield
 
 
